@@ -18,7 +18,7 @@ import os
 import csv
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import Optional
+from typing import Dict, List, Optional
 
 
 @dataclass
@@ -47,7 +47,7 @@ class NetworkData:
     edges: list = field(default_factory=list)
 
 
-def load_csv(filepath: str) -> list[dict]:
+def load_csv(filepath: str) -> List[Dict[str, str]]:
     """Load data from a CSV file."""
     with open(filepath, 'r', encoding='utf-8') as f:
         reader = csv.DictReader(f)

@@ -24,7 +24,7 @@ This project visualizes the hierarchical structure of ICD-10 codes, showing the 
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.9+
 
 ### Installation
 
