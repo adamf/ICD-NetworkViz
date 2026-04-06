@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>ICD-10 Network Visualization</title>
+  <link rel="stylesheet" href="/src/styles.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>ICD-10 Classification Network</h1>
+      <div class="controls">
+        <select id="layout-select" aria-label="Select visualization type">
+          <option value="tree">Hierarchical Tree</option>
+          <option value="radial">Radial Tree</option>
+          <option value="cluster">Cluster Dendrogram</option>
+        </select>
+        <select id="chapter-filter" aria-label="Filter by chapter">
+          <option value="all">All Chapters</option>
+        </select>
+        <button id="reset-btn" class="btn-secondary">Reset View</button>
+      </div>
+    </header>
+    <main>
+      <div id="visualization"></div>
+      <div id="loading">Loading ICD-10 data...</div>
+    </main>
+  </div>
+  
+  <div class="info-panel">
+    <h3>ICD-10 Hierarchy</h3>
+    <p>Interactive visualization of medical diagnosis codes organized by chapters, sections, and individual codes.</p>
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-value" id="node-count">0</div>
+        <div class="stat-label">Codes</div>
+      </div>
+      <div class="stat">
+        <div class="stat-value" id="chapter-count">0</div>
+        <div class="stat-label">Chapters</div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="legend">
+    <h4>Legend</h4>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #e91e63;"></div>
+      <span>Root (ICD-10)</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #9c27b0;"></div>
+      <span>Chapters</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #3f51b5;"></div>
+      <span>Sections</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #00bcd4;"></div>
+      <span>Root Codes</span>
+    </div>
+    <div class="legend-item">
+      <div class="legend-color" style="background: #4caf50;"></div>
+      <span>Specific Codes</span>
+    </div>
+  </div>
+
+  <div id="tooltip" class="tooltip"></div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
