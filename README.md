@@ -2,9 +2,11 @@
 
 Interactive visualization of the International Classification of Diseases, 10th Revision (ICD-10) medical diagnosis codes as a hierarchical network.
 
+**[Live Demo](https://adamf.github.io/ICD-NetworkViz/)**
+
 ## Overview
 
-This project visualizes the hierarchical structure of ICD-10 codes, showing the relationships between:
+This project visualizes the hierarchical structure of ICD-10 codes using D3.js, showing the relationships between:
 - **Chapters** (21 main categories)
 - **Sections** (disease groups within chapters)
 - **Root Diagnoses** (base codes like A00, A01)
@@ -12,39 +14,42 @@ This project visualizes the hierarchical structure of ICD-10 codes, showing the 
 
 ## Features
 
-- **Interactive Network Visualization**: Explore the ICD-10 hierarchy with zoom, pan, and click interactions
+- **Interactive D3.js Visualization**: Explore the ICD-10 hierarchy with zoom, pan, and click interactions
 - **Multiple Layout Options**: 
-  - Hierarchical (tree structure)
-  - Force-directed (physics simulation)
-  - Radial layout
+  - Hierarchical Tree (horizontal tree structure)
+  - Radial Tree (circular layout)
+  - Cluster Dendrogram (clustered hierarchy)
+- **Chapter Filtering**: Focus on specific ICD-10 chapters
 - **Responsive Design**: Works on desktop and mobile devices
-- **Modern Web Standards**: Built with vis-network 9.x and modern HTML5/CSS3
+- **Modern Web Standards**: Built with TypeScript, D3.js, and Vite
 
 ## Quick Start
 
 ### Prerequisites
 
-- Python 3.9+
+- Node.js 18+
 
 ### Installation
 
 ```bash
-pip install -r requirements.txt
+npm install
 ```
 
-### Generate Visualizations
+### Development
 
 ```bash
-python generate_visualizations.py
+npm run dev
 ```
 
-This will create:
-- `output/icd10_hierarchy.html` - Interactive HTML visualization
-- `output/icd10_network.json` - Network data in JSON format
+Open http://localhost:5173 in your browser.
 
-### View the Visualization
+### Build for Production
 
-Open `output/icd10_hierarchy.html` in any modern web browser.
+```bash
+npm run build
+```
+
+The built files will be in the `dist/` directory.
 
 ## Project Structure
 
@@ -54,36 +59,34 @@ ICD-NetworkViz/
 │   ├── chapters.csv      # ICD-10 chapters
 │   ├── sections.csv      # Sections within chapters
 │   └── diagnoses.csv     # Individual diagnosis codes
-├── output/
-│   ├── icd10_hierarchy.html  # Generated visualization
-│   └── icd10_network.json    # Network data
-├── generate_visualizations.py  # Main script
-├── requirements.txt
-└── README.md
+├── src/
+│   ├── main.ts           # Application entry point
+│   ├── data.ts           # Data loading and processing
+│   ├── visualization.ts  # D3.js visualization logic
+│   ├── types.ts          # TypeScript type definitions
+│   └── styles.css        # Application styles
+├── .github/
+│   └── workflows/
+│       └── deploy.yml    # GitHub Pages deployment
+├── index.html
+├── package.json
+├── tsconfig.json
+└── vite.config.ts
 ```
-
-## Customization
-
-### Adding More Data
-
-The visualization is generated from CSV files in the `data/` directory:
-
-- **chapters.csv**: `chapter_name, description`
-- **sections.csv**: `section_name, chapter_name, description`
-- **diagnoses.csv**: `diagnosis_name, section_name, chapter_name, xref_type, text, refers_to`
-
-### Modifying the Visualization
-
-Edit `generate_visualizations.py` to customize:
-- Node colors and sizes (see `levelColors` in the generated HTML)
-- Layout options
-- Interaction behaviors
 
 ## Technologies
 
-- **Python 3.11+**: Data processing and HTML generation
-- **vis-network 9.x**: Modern network visualization library (successor to vis.js)
-- **HTML5/CSS3**: Responsive, modern web interface
+- **TypeScript**: Type-safe JavaScript
+- **D3.js 7**: Data visualization library
+- **Vite**: Fast build tool and dev server
+- **GitHub Pages**: Static site hosting
+
+## Deployment
+
+The project automatically deploys to GitHub Pages when changes are pushed to the `main` branch. The deployment workflow:
+
+1. Builds the TypeScript/D3 application
+2. Deploys to GitHub Pages
 
 ## Original Data Source
 

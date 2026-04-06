@@ -1,9 +1,0 @@
-# Python dependencies for ICD-10 Network Visualization
-
-# Core dependencies
-networkx>=3.0
-pandas>=2.0
-
-# Optional: For running in Jupyter notebooks
-jupyter>=1.0
-ipython>=8.0
