@@ -49,6 +49,13 @@ let currentRoot: D3Node | null = null;
 let currentContainer: HTMLElement | null = null;
 let currentMode: LayoutMode = 'compact';
 let focusedNodeId: string | null = null;
+/**
+ * Extra node ids whose labels should be forced visible on top of
+ * whatever the current focus rule already reveals. Populated by
+ * panToNode when the user clicks a related entry in the detail panel
+ * — they want that node labeled without losing the rest of the view.
+ */
+let extraVisibleIds = new Set<string>();
 
 /**
  * Optional callback that rebuilds the hierarchy so the subtree rooted
@@ -115,6 +122,7 @@ export function renderVisualization(
   currentLayout = layoutType;
   currentContainer = container;
   focusedNodeId = null;
+  extraVisibleIds = new Set();
   renderInternal('compact');
   centerOnOverview();
 }
@@ -445,6 +453,7 @@ function isLeafParent(d: D3Node): boolean {
 function focusOnNode(nodeId: string): void {
   if (!currentContainer) return;
   focusedNodeId = nodeId;
+  extraVisibleIds = new Set();
 
   // Re-render with spacious spacing so leaves under the focused node
   // are far enough apart for their labels to be legible.
@@ -487,6 +496,10 @@ function updateLabelVisibility(): void {
     }
   }
 
+  // Union in the extra-visible set (populated by panToNode) so pans
+  // from the detail panel never hide labels the user could see before.
+  for (const id of extraVisibleIds) visible.add(id);
+
   g.selectAll<SVGTextElement, D3Node>('.node-label')
     .style('display', (d) => (visible.has(d.data.id) ? null : 'none'));
 }
@@ -520,17 +533,18 @@ function layoutToScreen(d: D3Node): [number, number] {
  * the detail panel — we want to show them where it lives without
  * yanking the zoom.
  *
- * Also treats the pan target as the new focus for label purposes,
- * so its label (and its direct children's labels) become visible.
- * Without this, panning to a grandchild of the previously focused
- * node would center on a dot with no label.
+ * Reveals the pan target's label (and its direct children) via the
+ * extra-visible set, without touching the current focus. This way
+ * the wider context — chapter/section labels that were visible
+ * before — stays on screen.
  */
 export function panToNode(nodeId: string): void {
   if (!currentContainer || !svg) return;
   const node = findNodeById(nodeId);
   if (!node) return;
 
-  focusedNodeId = nodeId;
+  extraVisibleIds.add(nodeId);
+  for (const c of node.children ?? []) extraVisibleIds.add(c.data.id);
   updateLabelVisibility();
 
   const [sx, sy] = layoutToScreen(node);
@@ -547,6 +561,7 @@ export function panToNode(nodeId: string): void {
 /** Clear focus, rebuild in compact mode, return to the overview. */
 export function resetZoom(container: HTMLElement, _layoutType: LayoutType): void {
   focusedNodeId = null;
+  extraVisibleIds = new Set();
   currentContainer = container;
   // Only re-render if we were in spacious mode; otherwise just re-center.
   if (currentMode !== 'compact') {
