@@ -451,7 +451,12 @@ function renderSugiyamaMode(width: number, height: number): void {
     w = Math.max(...xs) - Math.min(...xs) + 200;
     h = Math.max(...ys) - Math.min(...ys) + 200;
   } else {
-    const layout = sugiyama().nodeSize([90, 54]).gap([18, 40]);
+    // Expanded view: use d3-dag sugiyama top-down. Nodes stay narrow
+    // because labels will be rendered vertically (rotated -90) —
+    // they extend upward from each node into the layer gap. gap[1]
+    // must be large enough to fit the ~120px label without stepping
+    // into the layer above.
+    const layout = sugiyama().nodeSize([60, 54]).gap([14, 140]);
     try {
       const result = layout(dag);
       w = result.width;
@@ -608,30 +613,38 @@ function renderSugiyamaMode(width: number, height: number): void {
     .attr('dy', '0.33em')
     .text('+');
 
-  // In the default overview we pack chapters tightly in two rows.
-  // Rotate labels so they fan out away from the central row (up for
-  // nodes above the root, down for nodes below) — that lets columns
-  // sit only ~60px apart without labels colliding.
-  const useRotatedLabels =
-    sugiyamaExpandedIds.size === 0 && source.level === 0;
+  // Rotate labels vertically so columns can pack tighter without
+  // labels colliding. Two modes:
+  //  - Default overview (root + children only): top row rotates -90
+  //    (reads upward), bottom row rotates +90 (reads downward), so
+  //    labels fan AWAY from the central root row.
+  //  - Expanded view (d3-dag top-down): every label rotates -90 so
+  //    each one lives in the gap above its node.
+  // Root itself stays horizontal.
+  const overview = sugiyamaExpandedIds.size === 0 && source.level === 0;
+
+  const xOffset = (d: D3Node): number => (d.data.level === 0 ? 20 : 0);
 
   const labels = nodeGroups
     .append('text')
     .attr('class', 'node-label')
     .attr('text-anchor', 'start')
-    .attr('x', useRotatedLabels ? 0 : 12)
+    .attr('x', xOffset)
     .attr('transform', (d) => {
-      if (!useRotatedLabels) return null as unknown as string;
-      // Root: leave horizontal. Above root: rotate -90 so text reads
-      // upward. Below root: rotate +90 so text reads downward.
       if (d.data.level === 0) return '';
-      return (d.y ?? 0) < 0 ? 'rotate(-90) translate(12, 0)' : 'rotate(90) translate(12, 0)';
+      if (overview) {
+        return (d.y ?? 0) < 0
+          ? 'rotate(-90) translate(12, 0)'
+          : 'rotate(90) translate(12, 0)';
+      }
+      // Expanded: labels extend upward from each node.
+      return 'rotate(-90) translate(12, 0)';
     });
 
   labels
     .append('tspan')
     .attr('class', 'label-primary')
-    .attr('x', useRotatedLabels ? 0 : 12)
+    .attr('x', xOffset)
     .attr('dy', (d) => (d.data.shortLabel ? '-0.25em' : '0.31em'))
     .text((d) => d.data.name);
 
@@ -639,7 +652,7 @@ function renderSugiyamaMode(width: number, height: number): void {
     .filter((d) => !!d.data.shortLabel)
     .append('tspan')
     .attr('class', 'label-secondary')
-    .attr('x', useRotatedLabels ? 0 : 12)
+    .attr('x', xOffset)
     .attr('dy', '1.1em')
     .text((d) => d.data.shortLabel ?? '');
 
