@@ -1226,6 +1226,17 @@ function updateLabelVisibility(): void {
     currentRoot.each((d) => {
       if (d.data.level <= maxLevel) visible.add(d.data.id);
     });
+
+    // Sugiyama: expanded nodes and their direct children get labels
+    // too so the user can read what they just drilled into.
+    if (currentLayout === 'sugiyama' && sugiyamaExpandedIds.size) {
+      currentRoot.each((d) => {
+        if (sugiyamaExpandedIds.has(d.data.id)) {
+          visible.add(d.data.id);
+          for (const c of d.children ?? []) visible.add(c.data.id);
+        }
+      });
+    }
   } else {
     const focus = findNodeById(focusedNodeId);
     if (focus) {
