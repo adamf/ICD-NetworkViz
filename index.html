@@ -19,6 +19,7 @@
           <option value="tree">Hierarchical Tree</option>
           <option value="radial">Radial Tree</option>
           <option value="cluster">Cluster Dendrogram</option>
+          <option value="graph">Force Graph</option>
         </select>
         <select id="chapter-filter" aria-label="Filter by chapter">
           <option value="all">All Chapters</option>
@@ -69,6 +70,14 @@
     <div class="legend-item">
       <div class="legend-color" style="background: #4caf50;"></div>
       <span>Specific Codes</span>
+    </div>
+    <div id="xref-legend" class="xref-legend" hidden>
+      <h4>Cross-refs</h4>
+      <div class="legend-item"><span class="legend-edge xref-foundationChildElsewhere"></span><span>Also grouped under</span></div>
+      <div class="legend-item"><span class="legend-edge xref-exclusion"></span><span>Exclusion</span></div>
+      <div class="legend-item"><span class="legend-edge xref-inclusion"></span><span>Inclusion</span></div>
+      <div class="legend-item"><span class="legend-edge xref-relatedPerinatal"></span><span>Related (perinatal)</span></div>
+      <div class="legend-item"><span class="legend-edge xref-relatedMaternal"></span><span>Related (maternal)</span></div>
     </div>
   </div>
 

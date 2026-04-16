@@ -300,6 +300,45 @@ main {
   stroke-width: 1px;
 }
 
+/* Force-graph cross-reference edges. Color-coded by kind so the
+ * different polyhierarchy relationships can be told apart. */
+.link.xref {
+  stroke-width: 1.2px;
+  stroke-dasharray: 4 3;
+  opacity: 0.75;
+}
+
+.link.xref-foundationChildElsewhere { stroke: #ffb84d; }
+.link.xref-exclusion { stroke: #ff6b6b; }
+.link.xref-inclusion { stroke: #51cf66; }
+.link.xref-relatedPerinatal { stroke: #a78bfa; }
+.link.xref-relatedMaternal { stroke: #f472b6; }
+
+.xref-legend {
+  margin-top: 0.8rem;
+  padding-top: 0.5rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.xref-legend h4 {
+  color: #00d4ff;
+  margin-bottom: 0.35rem;
+}
+
+.legend-edge {
+  display: inline-block;
+  width: 18px;
+  height: 2px;
+  margin-right: 0.5rem;
+  background: currentColor;
+}
+
+.legend-edge.xref-foundationChildElsewhere { color: #ffb84d; }
+.legend-edge.xref-exclusion { color: #ff6b6b; }
+.legend-edge.xref-inclusion { color: #51cf66; }
+.legend-edge.xref-relatedPerinatal { color: #a78bfa; }
+.legend-edge.xref-relatedMaternal { color: #f472b6; }
+
 /* Detail panel.
  * Default position is right-side (used for radial). The tree/cluster
  * layouts dock it on the left instead, since children of a focused

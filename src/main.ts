@@ -20,6 +20,7 @@ import {
   renderVisualization,
   resetZoom,
   setHierarchyExpander,
+  setCrossRefProvider,
 } from './visualization';
 import { initDetailPanel, refreshIndex, closeDetailPanel } from './detailPanel';
 import type {
@@ -29,6 +30,8 @@ import type {
   HierarchyNode,
   DetailMap,
   ICD11Bundle,
+  CrossRef,
+  CrossRefKind,
 } from './types';
 
 interface ICD10Data {
@@ -53,8 +56,12 @@ let icd11Details: DetailMap | null = null;
  */
 function applyLayoutClass(layout: LayoutType): void {
   const body = document.body;
-  body.classList.remove('layout-tree', 'layout-cluster', 'layout-radial');
+  body.classList.remove('layout-tree', 'layout-cluster', 'layout-radial', 'layout-graph');
   body.classList.add(`layout-${layout}`);
+
+  // Cross-ref legend is only meaningful in the force-graph layout.
+  const xrefLegend = document.getElementById('xref-legend');
+  if (xrefLegend) xrefLegend.hidden = layout !== 'graph';
 }
 
 async function init(): Promise<void> {
@@ -216,6 +223,7 @@ async function switchRevision(revision: Revision): Promise<void> {
       if (!entity || !entity.children.length) return null;
       return buildICD11Hierarchy(icd11, currentChapterFilter, { expandId: nodeId });
     });
+    setCrossRefProvider(icd11CrossRefProvider);
   } else if (icd10) {
     populateChapterFilter(icd10ChapterOptions(icd10.chapters));
     const hierarchy = buildHierarchy(
@@ -226,9 +234,30 @@ async function switchRevision(revision: Revision): Promise<void> {
     );
     initDetailPanel(icd10.details, hierarchy);
     setHierarchyExpander(null);
+    setCrossRefProvider(null);
   }
 
   rerender();
+}
+
+/**
+ * Aggregate the ICD-11 entity's polyhierarchy-style references into
+ * the uniform { targetId, kind } shape consumed by the force-graph.
+ */
+function icd11CrossRefProvider(nodeId: string): CrossRef[] {
+  if (!icd11) return [];
+  const e = icd11.entities[nodeId];
+  if (!e) return [];
+  const out: CrossRef[] = [];
+  const add = (ids: string[], kind: CrossRefKind) => {
+    for (const id of ids) out.push({ targetId: id, kind });
+  };
+  add(e.foundationChildElsewhere, 'foundationChildElsewhere');
+  add(e.exclusion, 'exclusion');
+  add(e.inclusion, 'inclusion');
+  add(e.relatedPerinatal, 'relatedPerinatal');
+  add(e.relatedMaternal, 'relatedMaternal');
+  return out;
 }
 
 function setRevisionButtonsDisabled(disabled: boolean): void {

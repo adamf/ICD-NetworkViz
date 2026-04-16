@@ -32,7 +32,23 @@ export interface HierarchyNode {
   children?: HierarchyNode[];
 }
 
-export type LayoutType = 'tree' | 'radial' | 'cluster';
+export type LayoutType = 'tree' | 'radial' | 'cluster' | 'graph';
+
+/**
+ * Kinds of cross-reference edge between ICD-11 entities that the
+ * force-directed graph layout can visualise.
+ */
+export type CrossRefKind =
+  | 'foundationChildElsewhere'
+  | 'exclusion'
+  | 'inclusion'
+  | 'relatedPerinatal'
+  | 'relatedMaternal';
+
+export interface CrossRef {
+  targetId: string;
+  kind: CrossRefKind;
+}
 
 export type Revision = 'icd10' | 'icd11';
 

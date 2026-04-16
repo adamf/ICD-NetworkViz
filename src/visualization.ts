@@ -3,7 +3,7 @@
  */
 
 import * as d3 from 'd3';
-import type { HierarchyNode, LayoutType } from './types';
+import type { HierarchyNode, LayoutType, CrossRef, CrossRefKind } from './types';
 import { showDetail } from './detailPanel';
 
 // Color scheme for different levels
@@ -68,6 +68,18 @@ let expander: HierarchyExpander | null = null;
 
 export function setHierarchyExpander(fn: HierarchyExpander | null): void {
   expander = fn;
+}
+
+/**
+ * Optional callback providing cross-reference edges for a node in the
+ * force-directed graph layout. Returns an array of { targetId, kind }
+ * tuples; edges to targets not in the current hierarchy are skipped.
+ */
+export type CrossRefProvider = (nodeId: string) => CrossRef[];
+let crossRefProvider: CrossRefProvider | null = null;
+
+export function setCrossRefProvider(fn: CrossRefProvider | null): void {
+  crossRefProvider = fn;
 }
 
 /**
@@ -139,6 +151,11 @@ function renderInternal(mode: LayoutMode): void {
   currentMode = mode;
 
   g.selectAll('*').remove();
+
+  if (currentLayout === 'graph') {
+    renderGraphMode(width, height);
+    return;
+  }
 
   const root = d3.hierarchy(currentData);
 
@@ -237,6 +254,144 @@ function renderInternal(mode: LayoutMode): void {
 }
 
 /**
+ * Force-directed graph layout.
+ *
+ * Flattens the current hierarchy into a node set, builds tree edges
+ * (parent -> child) plus any in-scope cross-reference edges from the
+ * CrossRefProvider, and runs a d3.forceSimulation. The simulation is
+ * pre-ticked synchronously so the layout is settled by the time we
+ * render.
+ */
+function renderGraphMode(width: number, height: number): void {
+  if (!currentData) return;
+
+  const hierarchy = d3.hierarchy(currentData) as D3Node;
+  const nodes = hierarchy.descendants() as D3Node[];
+  const byId = new Map<string, D3Node>();
+  for (const n of nodes) byId.set(n.data.id, n);
+
+  // Seed initial positions in a small disc around the center so the
+  // simulation has somewhere to start.
+  const cx = width / 2;
+  const cy = height / 2;
+  for (const n of nodes) {
+    if (n.data.level === 0) {
+      n.x = cx;
+      n.y = cy;
+    } else {
+      n.x = cx + (Math.random() - 0.5) * 200;
+      n.y = cy + (Math.random() - 0.5) * 200;
+    }
+  }
+
+  // Edges: tree parent/child plus any cross-refs (ICD-11).
+  type Link = {
+    source: D3Node;
+    target: D3Node;
+    kind: 'tree' | CrossRefKind;
+  };
+  const links: Link[] = hierarchy.links().map((l) => ({
+    source: l.source as D3Node,
+    target: l.target as D3Node,
+    kind: 'tree',
+  }));
+
+  if (crossRefProvider) {
+    for (const n of nodes) {
+      const refs = crossRefProvider(n.data.id);
+      for (const { targetId, kind } of refs) {
+        const tgt = byId.get(targetId);
+        if (tgt && tgt !== n) {
+          links.push({ source: n, target: tgt, kind });
+        }
+      }
+    }
+  }
+
+  // Simulation. Tree links are strong (short + firm) so the parent/
+  // child backbone stays intact; cross-refs are long + weak hints.
+  const sim = d3
+    .forceSimulation<D3Node>(nodes)
+    .force(
+      'link',
+      d3
+        .forceLink<D3Node, Link>(links)
+        .id((d) => d.data.id)
+        .distance((l) => (l.kind === 'tree' ? 45 : 110))
+        .strength((l) => (l.kind === 'tree' ? 0.7 : 0.05)),
+    )
+    .force('charge', d3.forceManyBody<D3Node>().strength(-140))
+    .force('center', d3.forceCenter(cx, cy))
+    .force('collide', d3.forceCollide<D3Node>().radius(16))
+    .stop();
+
+  for (let i = 0; i < 400; i++) sim.tick();
+
+  currentRoot = hierarchy;
+
+  // Tree links first (muted), cross-ref links on top (colored).
+  const linkGroup = g.append('g').attr('class', 'links');
+  linkGroup
+    .selectAll<SVGLineElement, Link>('line')
+    .data(links)
+    .join('line')
+    .attr('class', (d) => (d.kind === 'tree' ? 'link' : `link xref xref-${d.kind}`))
+    .attr('x1', (d) => d.source.x ?? 0)
+    .attr('y1', (d) => d.source.y ?? 0)
+    .attr('x2', (d) => d.target.x ?? 0)
+    .attr('y2', (d) => d.target.y ?? 0);
+
+  // Nodes.
+  const nodeGroups = g
+    .append('g')
+    .attr('class', 'nodes')
+    .selectAll<SVGGElement, D3Node>('g')
+    .data(nodes)
+    .join('g')
+    .attr('class', 'node')
+    .attr('transform', (d) => `translate(${d.x ?? 0}, ${d.y ?? 0})`);
+
+  nodeGroups
+    .append('circle')
+    .attr('r', (d) => levelSizes[d.data.level] || 4)
+    .attr('fill', (d) => levelColors[d.data.level] || '#607d8b')
+    .attr(
+      'stroke',
+      (d) =>
+        d3.color(levelColors[d.data.level] || '#607d8b')?.darker(0.5)?.toString() ||
+        '#333',
+    )
+    .on('mouseover', handleMouseOver)
+    .on('mouseout', handleMouseOut)
+    .on('click', handleClick)
+    .on('dblclick', handleDoubleClick);
+
+  // Labels always to the right of the node.
+  const labels = nodeGroups
+    .append('text')
+    .attr('class', 'node-label')
+    .attr('x', 12)
+    .attr('text-anchor', 'start');
+
+  labels
+    .append('tspan')
+    .attr('class', 'label-primary')
+    .attr('x', 12)
+    .attr('dy', (d) => (d.data.shortLabel ? '-0.25em' : '0.31em'))
+    .text((d) => d.data.name);
+
+  labels
+    .filter((d) => !!d.data.shortLabel)
+    .append('tspan')
+    .attr('class', 'label-secondary')
+    .attr('x', 12)
+    .attr('dy', '1.1em')
+    .text((d) => d.data.shortLabel ?? '');
+
+  updateLabelVisibility();
+}
+
+/**
  * Horizontal tree layout. In compact mode we use .size() so the whole
  * tree fits into the viewport; in spacious mode we use .nodeSize() so
  * every sibling gets a fixed amount of vertical room — used when a
@@ -321,6 +476,14 @@ function centerOnOverview(): void {
     initialTransform = d3.zoomIdentity
       .translate(width / 2, height / 2)
       .scale(0.8);
+  } else if (currentLayout === 'graph' && currentRoot) {
+    // Force simulation places nodes around (width/2, height/2). Fit
+    // the resulting cloud with a little margin.
+    initialTransform = fitToNodes(currentRoot.descendants() as D3Node[], width, height, {
+      maxScale: 1,
+      padX: 80,
+      padY: 80,
+    });
   } else {
     // In compact mode the tree fills (width-200) x (height-100) starting
     // at (0, 0); translate right so root labels aren't clipped.
@@ -455,6 +618,25 @@ function focusOnNode(nodeId: string): void {
   focusedNodeId = nodeId;
   extraVisibleIds = new Set();
 
+  // For the graph layout we can't re-layout meaningfully — nodes are
+  // already placed by the force simulation — so just update labels
+  // and pan to the target.
+  if (currentLayout === 'graph') {
+    updateLabelVisibility();
+    const focus = findNodeById(nodeId);
+    if (!focus) return;
+    const [sx, sy] = layoutToScreen(focus);
+    const w = currentContainer.clientWidth;
+    const h = currentContainer.clientHeight;
+    const current = d3.zoomTransform(svg.node() as SVGSVGElement);
+    const scale = Math.max(current.k, 1.8);
+    const t = d3.zoomIdentity
+      .translate(w / 2 - sx * scale, h / 2 - sy * scale)
+      .scale(scale);
+    svg.transition().duration(750).call(zoom.transform, t);
+    return;
+  }
+
   // Re-render with spacious spacing so leaves under the focused node
   // are far enough apart for their labels to be legible.
   renderInternal('spacious');
@@ -524,6 +706,10 @@ function layoutToScreen(d: D3Node): [number, number] {
     const angle = d.x - Math.PI / 2;
     return [d.y * Math.cos(angle), d.y * Math.sin(angle)];
   }
+  if (currentLayout === 'graph') {
+    // Graph uses native (x, y) coordinates from the force simulation.
+    return [d.x ?? 0, d.y ?? 0];
+  }
   return [d.y, d.x];
 }
 
@@ -563,8 +749,9 @@ export function resetZoom(container: HTMLElement, _layoutType: LayoutType): void
   focusedNodeId = null;
   extraVisibleIds = new Set();
   currentContainer = container;
-  // Only re-render if we were in spacious mode; otherwise just re-center.
-  if (currentMode !== 'compact') {
+  // Tree/cluster: only re-render if we were in spacious mode.
+  // Graph: no spacious mode; just re-center and restore labels.
+  if (currentLayout !== 'graph' && currentMode !== 'compact') {
     renderInternal('compact');
   } else {
     updateLabelVisibility();
