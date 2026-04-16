@@ -1172,17 +1172,44 @@ function focusOnNode(nodeId: string): void {
     return;
   }
 
-  // Re-render with spacious spacing so leaves under the focused node
-  // are far enough apart for their labels to be legible.
-  renderInternal('spacious');
+  // Decide between compact (current layout) and spacious re-render
+  // based on what the focused node's children look like. Spacious
+  // mode spreads leaves for readable labels, but for non-leaf
+  // parents (chapters, sections) it makes the tree huge and the
+  // fit zooms out way too far. Stick with compact in that case and
+  // fit only to focus + direct children — we're not trying to show
+  // the full subtree, just "the node I clicked and one level down".
+  const preRenderFocus = findNodeById(nodeId);
+  const needsSpacious = preRenderFocus ? isLeafParent(preRenderFocus) : false;
+
+  if (needsSpacious) {
+    renderInternal('spacious');
+  } else {
+    updateLabelVisibility();
+  }
 
   const focus = findNodeById(nodeId);
   if (!focus) return;
   const w = currentContainer.clientWidth;
   const h = currentContainer.clientHeight;
-  const subtree = focus.descendants() as D3Node[];
-  const t = fitToNodes(subtree, w, h, { maxScale: 3.5, padX: 220, padY: 60 });
+  const nodesToFit = needsSpacious
+    ? (focus.descendants() as D3Node[])
+    : ([focus, ...(focus.children ?? [])] as D3Node[]);
+  const t = fitToNodes(nodesToFit, w, h, {
+    maxScale: needsSpacious ? 3.5 : 2.2,
+    padX: 220,
+    padY: 60,
+  });
   svg.transition().duration(750).call(zoom.transform, t);
+}
+
+/** Returns true iff the node has children and all of them are
+ * leaves (no grandchildren). Used to decide whether a focus should
+ * re-render in spacious mode for leaf label readability. */
+function isLeafParent(d: D3Node): boolean {
+  const kids = d.children ?? [];
+  if (kids.length === 0) return false;
+  return kids.every((c) => !c.children || c.children.length === 0);
 }
 
 /**

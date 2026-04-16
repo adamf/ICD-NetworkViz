@@ -222,8 +222,13 @@ export async function loadICD11Bundle(): Promise<ICD11Bundle> {
  */
 const ICD11_DEFAULT_MAX_DEPTH = 2;
 
-/** How many levels to unfold below the expand target on focus. */
-const ICD11_EXPAND_EXTRA_DEPTH = 3;
+/**
+ * How many levels to unfold below the expand target on focus. One
+ * level is enough: a double-click on a chapter reveals its blocks
+ * (not blocks + categories). Users drill further by double-clicking
+ * again.
+ */
+const ICD11_EXPAND_EXTRA_DEPTH = 1;
 
 /**
  * Build a HierarchyNode tree from an ICD-11 bundle. Uses the MMS
