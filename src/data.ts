@@ -35,10 +35,13 @@ const CHAPTER_SHORT_LABELS: Record<string, string> = {
 };
 
 /**
- * Trim a section description to a short label on a word boundary so it
- * fits comfortably beside a node in the visualization.
+ * Trim a description to a short label on a word boundary so it fits
+ * beside a node in the visualization. `max` differs by level: section
+ * subtitles sit under chapter headers in the compact overview and
+ * need to stay short, but root-code / specific-code subtitles only
+ * appear when the user has zoomed in, so they can run longer.
  */
-function shortenSection(desc: string, max = 28): string {
+function shorten(desc: string, max: number): string {
   const cleaned = desc.replace(/\s*\([^)]*\)\s*$/, '').trim();
   if (cleaned.length <= max) return cleaned;
   const cut = cleaned.slice(0, max);
@@ -110,7 +113,7 @@ export function buildHierarchy(
         id: section.section_name,
         name: section.section_name,
         description: section.description,
-        shortLabel: shortenSection(section.description),
+        shortLabel: shorten(section.description, 28),
         level: 2,
         children: []
       };
@@ -137,7 +140,7 @@ export function buildHierarchy(
           id: rootCode,
           name: rootCode,
           description: rootDesc,
-          shortLabel: shortenSection(rootDesc),
+          shortLabel: shorten(rootDesc, 48),
           level: 3,
           children: []
         };
@@ -149,7 +152,7 @@ export function buildHierarchy(
               id: diag.diagnosis_name,
               name: diag.diagnosis_name,
               description: diag.text,
-              shortLabel: shortenSection(diag.text),
+              shortLabel: shorten(diag.text, 48),
               level: 4
             });
           }

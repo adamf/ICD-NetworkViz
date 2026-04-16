@@ -31,8 +31,11 @@ type D3Node = d3.HierarchyPointNode<HierarchyNode>;
 // get enough vertical space for labels — used when a node is focused.
 type LayoutMode = 'compact' | 'spacious';
 
-const SPACIOUS_DY = 16;
-const SPACIOUS_DX = 220;
+// Spacious-mode sibling spacing. A label pair (primary name + short
+// description on a second line) is ~22 layout units tall at our font
+// sizes, so DY must exceed that to keep labels from touching.
+const SPACIOUS_DY = 30;
+const SPACIOUS_DX = 260;
 
 let svg: d3.Selection<SVGSVGElement, unknown, null, undefined>;
 let g: d3.Selection<SVGGElement, unknown, null, undefined>;
