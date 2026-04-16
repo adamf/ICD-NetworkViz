@@ -10,6 +10,7 @@ import type {
   HierarchyNode,
   DetailMap,
   ICD11Bundle,
+  ChordData,
 } from './types';
 
 /**
@@ -353,6 +354,67 @@ function shortenIcd11(title: string, level: number): string | undefined {
   // Chapters: keep the full title so the overview is readable.
   const max = level <= 1 ? 36 : level === 2 ? 32 : 44;
   return shorten(title, max);
+}
+
+/**
+ * Aggregate ICD-11 cross-references by chapter for a chord diagram.
+ * Walks every entity's primary linearization parent chain up to a
+ * chapter, then bins each cross-reference edge into a matrix cell.
+ */
+export function buildICD11ChordData(bundle: ICD11Bundle): ChordData {
+  const rootChildren = bundle.entities[bundle.rootId]?.children ?? [];
+  const chapters = rootChildren
+    .map((id) => {
+      const e = bundle.entities[id];
+      if (!e) return null;
+      return { id, code: e.code ?? '', title: e.title ?? '' };
+    })
+    .filter((c): c is { id: string; code: string; title: string } => c !== null);
+
+  const chapterIdxById = new Map<string, number>();
+  chapters.forEach((c, i) => chapterIdxById.set(c.id, i));
+
+  // Tag every entity with the index of its chapter (via primary parents).
+  const chapterOf = new Map<string, number>();
+  for (let i = 0; i < chapters.length; i++) {
+    const stack = [chapters[i].id];
+    while (stack.length) {
+      const id = stack.pop()!;
+      if (chapterOf.has(id)) continue;
+      chapterOf.set(id, i);
+      const e = bundle.entities[id];
+      if (e) for (const c of e.children) stack.push(c);
+    }
+  }
+
+  const n = chapters.length;
+  const matrix: number[][] = Array.from({ length: n }, () =>
+    new Array<number>(n).fill(0),
+  );
+
+  const kinds: (keyof ICD11Bundle['entities'][string])[] = [
+    'foundationChildElsewhere',
+    'exclusion',
+    'inclusion',
+    'relatedPerinatal',
+    'relatedMaternal',
+  ];
+
+  for (const [id, ent] of Object.entries(bundle.entities)) {
+    const src = chapterOf.get(id);
+    if (src === undefined) continue;
+    for (const k of kinds) {
+      const refs = (ent as unknown as Record<string, unknown>)[k];
+      if (!Array.isArray(refs)) continue;
+      for (const tgtId of refs as string[]) {
+        const tgt = chapterOf.get(tgtId);
+        if (tgt === undefined || tgt === src) continue;
+        matrix[src][tgt] += 1;
+      }
+    }
+  }
+
+  return { chapters, matrix };
 }
 
 /**

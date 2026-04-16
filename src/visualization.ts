@@ -3,7 +3,13 @@
  */
 
 import * as d3 from 'd3';
-import type { HierarchyNode, LayoutType, CrossRef, CrossRefKind } from './types';
+import type {
+  HierarchyNode,
+  LayoutType,
+  CrossRef,
+  CrossRefKind,
+  ChordData,
+} from './types';
 import { showDetail } from './detailPanel';
 
 // Color scheme for different levels
@@ -83,6 +89,29 @@ export function setCrossRefProvider(fn: CrossRefProvider | null): void {
 }
 
 /**
+ * Optional provider for chord-diagram data (chapter x chapter matrix
+ * of cross-refs). Set by main.ts once per revision switch.
+ */
+export type ChordDataProvider = () => ChordData | null;
+let chordDataProvider: ChordDataProvider | null = null;
+
+export function setChordDataProvider(fn: ChordDataProvider | null): void {
+  chordDataProvider = fn;
+}
+
+/** Look up a HierarchyNode by id for chord click-through. */
+function hierarchyNodeById(id: string): HierarchyNode | null {
+  if (!currentData) return null;
+  const stack: HierarchyNode[] = [currentData];
+  while (stack.length) {
+    const n = stack.pop()!;
+    if (n.id === id) return n;
+    if (n.children) stack.push(...n.children);
+  }
+  return null;
+}
+
+/**
  * Initialize the D3 visualization
  */
 export function initVisualization(container: HTMLElement): void {
@@ -154,6 +183,11 @@ function renderInternal(mode: LayoutMode): void {
 
   if (currentLayout === 'graph') {
     renderGraphMode(width, height);
+    return;
+  }
+
+  if (currentLayout === 'chord') {
+    renderChordMode(width, height);
     return;
   }
 
@@ -251,6 +285,152 @@ function renderInternal(mode: LayoutMode): void {
     .text(d => d.data.shortLabel ?? '');
 
   updateLabelVisibility();
+}
+
+/**
+ * Chord diagram: each ICD-11 chapter becomes an arc on a ring, and
+ * ribbons between arcs show cross-reference traffic between chapters
+ * aggregated across all their descendants. Only meaningful for ICD-11;
+ * for ICD-10 (or when chord data is unavailable) we render a short
+ * note instead.
+ */
+function renderChordMode(width: number, height: number): void {
+  currentRoot = null;
+
+  const data = chordDataProvider?.();
+  if (!data) {
+    const msg = g
+      .append('text')
+      .attr('class', 'chord-empty')
+      .attr('x', width / 2)
+      .attr('y', height / 2)
+      .attr('text-anchor', 'middle')
+      .attr('fill', 'rgba(255,255,255,0.7)')
+      .attr('font-size', 16);
+    msg.append('tspan').attr('x', width / 2).text('Chord view is only available for ICD-11.');
+    msg
+      .append('tspan')
+      .attr('x', width / 2)
+      .attr('dy', '1.4em')
+      .attr('fill', 'rgba(255,255,255,0.5)')
+      .text('Switch to ICD-11 to see inter-chapter cross-reference traffic.');
+    return;
+  }
+
+  const { chapters, matrix } = data;
+  const outerRadius = Math.min(width, height) / 2 - 70;
+  const innerRadius = outerRadius - 18;
+
+  const chord = d3
+    .chord()
+    .padAngle(0.03)
+    .sortSubgroups(d3.descending)
+    .sortChords(d3.descending);
+
+  const chords = chord(matrix);
+
+  const colorScale = d3.scaleSequential<string>(d3.interpolateRainbow).domain([0, chapters.length]);
+  const color = (i: number): string => colorScale(i) ?? '#888';
+
+  const arc = d3
+    .arc<d3.ChordGroup>()
+    .innerRadius(innerRadius)
+    .outerRadius(outerRadius);
+
+  const ribbon = d3
+    .ribbon<d3.Chord, d3.ChordSubgroup>()
+    .radius(innerRadius);
+
+  const root = g.append('g').attr('transform', `translate(${width / 2}, ${height / 2})`);
+
+  // Ribbons first so arcs sit on top of their own ends.
+  const ribbonSel = root
+    .append('g')
+    .attr('class', 'chord-ribbons')
+    .selectAll<SVGPathElement, d3.Chord>('path')
+    .data(chords)
+    .join('path')
+    .attr('class', 'chord-ribbon')
+    .attr('d', ribbon)
+    .attr('fill', (d) => color(d.source.index))
+    .attr('fill-opacity', 0.55)
+    .attr('stroke', (d) => d3.color(color(d.source.index))?.darker(0.6)?.toString() ?? '#000')
+    .attr('stroke-opacity', 0.2);
+
+  ribbonSel.append('title').text(
+    (d) =>
+      `${shortTitle(chapters[d.source.index])} → ${shortTitle(chapters[d.target.index])}\n${d.source.value} refs` +
+      (d.target.value !== d.source.value ? ` (reverse: ${d.target.value})` : ''),
+  );
+
+  // Chapter arcs (groups).
+  const groupSel = root
+    .append('g')
+    .attr('class', 'chord-groups')
+    .selectAll<SVGGElement, d3.ChordGroup>('g')
+    .data(chords.groups)
+    .join('g')
+    .attr('class', 'chord-group');
+
+  groupSel
+    .append('path')
+    .attr('d', arc)
+    .attr('fill', (d) => color(d.index))
+    .attr('stroke', (d) => d3.color(color(d.index))?.darker(0.8)?.toString() ?? '#000')
+    .style('cursor', 'pointer')
+    .on('mouseover', (_e, d) => highlightGroup(d.index))
+    .on('mouseout', () => clearHighlight())
+    .on('click', (_e, d) => {
+      const ch = chapters[d.index];
+      const node = hierarchyNodeById(ch.id);
+      if (node) showDetail(node);
+    });
+
+  groupSel
+    .append('title')
+    .text((d) => {
+      const ch = chapters[d.index];
+      return `${ch.code ? `Ch ${ch.code}: ` : ''}${ch.title}\n${d.value} outbound refs`;
+    });
+
+  // Chapter labels around the ring.
+  groupSel
+    .append('text')
+    .attr('class', 'chord-label')
+    .each(function (d) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      (d as any).angle = (d.startAngle + d.endAngle) / 2;
+    })
+    .attr('dy', '0.35em')
+    .attr('transform', (d) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const a = (d as any).angle as number;
+      const rotate = (a * 180) / Math.PI - 90;
+      const flip = a > Math.PI ? 'rotate(180)' : '';
+      return `rotate(${rotate}) translate(${outerRadius + 8}, 0) ${flip}`;
+    })
+    .attr('text-anchor', (d) => {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const a = (d as any).angle as number;
+      return a > Math.PI ? 'end' : 'start';
+    })
+    .style('cursor', 'pointer')
+    .style('pointer-events', 'none')
+    .text((d) => shortTitle(chapters[d.index]));
+
+  function highlightGroup(i: number): void {
+    ribbonSel.attr('fill-opacity', (r) =>
+      r.source.index === i || r.target.index === i ? 0.85 : 0.08,
+    );
+  }
+  function clearHighlight(): void {
+    ribbonSel.attr('fill-opacity', 0.55);
+  }
+}
+
+function shortTitle(ch: { code: string; title: string }): string {
+  const short = ch.title.length > 26 ? ch.title.slice(0, 24) + '…' : ch.title;
+  return ch.code ? `${ch.code}  ${short}` : short;
 }
 
 /**
@@ -472,7 +652,10 @@ function centerOnOverview(): void {
   const height = currentContainer.clientHeight;
   let initialTransform: d3.ZoomTransform;
 
-  if (currentLayout === 'radial') {
+  if (currentLayout === 'chord') {
+    // Chord already self-centers at (width/2, height/2); identity is fine.
+    initialTransform = d3.zoomIdentity;
+  } else if (currentLayout === 'radial') {
     initialTransform = d3.zoomIdentity
       .translate(width / 2, height / 2)
       .scale(0.8);
@@ -615,6 +798,7 @@ function isLeafParent(d: D3Node): boolean {
  */
 function focusOnNode(nodeId: string): void {
   if (!currentContainer) return;
+  if (currentLayout === 'chord') return; // chord has no per-node focus
   focusedNodeId = nodeId;
   extraVisibleIds = new Set();
 
@@ -754,8 +938,9 @@ export function resetZoom(container: HTMLElement, _layoutType: LayoutType): void
   extraVisibleIds = new Set();
   currentContainer = container;
   // Tree/cluster: only re-render if we were in spacious mode.
-  // Graph: no spacious mode; just re-center and restore labels.
-  if (currentLayout !== 'graph' && currentMode !== 'compact') {
+  // Graph / chord: no spacious mode; just re-center and restore labels.
+  const skipRerender = currentLayout === 'graph' || currentLayout === 'chord';
+  if (!skipRerender && currentMode !== 'compact') {
     renderInternal('compact');
   } else {
     updateLabelVisibility();

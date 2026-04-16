@@ -346,6 +346,20 @@ body.layout-graph .link:not(.xref) {
 .legend-edge.xref-relatedPerinatal { color: #a78bfa; }
 .legend-edge.xref-relatedMaternal { color: #f472b6; }
 
+/* Chord diagram. Labels render in fill white with a subtle shadow
+ * so they stay legible when they cross over a dark ribbon. */
+.chord-label {
+  font-size: 10px;
+  fill: rgba(255, 255, 255, 0.9);
+  paint-order: stroke;
+  stroke: rgba(0, 0, 0, 0.6);
+  stroke-width: 2px;
+}
+
+.chord-empty {
+  font-family: inherit;
+}
+
 /* Detail panel.
  * Default position is right-side (used for radial). The tree/cluster
  * layouts dock it on the left instead, since children of a focused

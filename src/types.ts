@@ -32,7 +32,18 @@ export interface HierarchyNode {
   children?: HierarchyNode[];
 }
 
-export type LayoutType = 'tree' | 'radial' | 'cluster' | 'graph';
+export type LayoutType = 'tree' | 'radial' | 'cluster' | 'graph' | 'chord';
+
+/**
+ * Aggregated chord-diagram data for ICD-11 chapter cross-references.
+ * `matrix[i][j]` is the count of cross-ref edges that start in chapter
+ * `chapters[i]` and point into chapter `chapters[j]`. Self-references
+ * are excluded.
+ */
+export interface ChordData {
+  chapters: { id: string; code: string; title: string }[];
+  matrix: number[][];
+}
 
 /**
  * Kinds of cross-reference edge between ICD-11 entities that the

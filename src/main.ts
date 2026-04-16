@@ -14,6 +14,7 @@ import {
   loadICD11Bundle,
   buildICD11Hierarchy,
   buildICD11Details,
+  buildICD11ChordData,
 } from './data';
 import {
   initVisualization,
@@ -21,6 +22,7 @@ import {
   resetZoom,
   setHierarchyExpander,
   setCrossRefProvider,
+  setChordDataProvider,
 } from './visualization';
 import { initDetailPanel, refreshIndex, closeDetailPanel } from './detailPanel';
 import type {
@@ -30,6 +32,7 @@ import type {
   HierarchyNode,
   DetailMap,
   ICD11Bundle,
+  ChordData,
   CrossRef,
   CrossRefKind,
 } from './types';
@@ -49,6 +52,7 @@ let containerRef: HTMLElement | null = null;
 let icd10: ICD10Data | null = null;
 let icd11: ICD11Bundle | null = null;
 let icd11Details: DetailMap | null = null;
+let icd11Chord: ChordData | null = null;
 
 /**
  * Mirror the active layout as a body class so layout-dependent UI
@@ -205,6 +209,7 @@ async function switchRevision(revision: Revision): Promise<void> {
       const bundle = await loadICD11Bundle();
       icd11 = bundle;
       icd11Details = buildICD11Details(bundle);
+      icd11Chord = buildICD11ChordData(bundle);
     } finally {
       setRevisionButtonsDisabled(false);
     }
@@ -224,6 +229,7 @@ async function switchRevision(revision: Revision): Promise<void> {
       return buildICD11Hierarchy(icd11, currentChapterFilter, { expandId: nodeId });
     });
     setCrossRefProvider(icd11CrossRefProvider);
+    setChordDataProvider(() => icd11Chord);
   } else if (icd10) {
     populateChapterFilter(icd10ChapterOptions(icd10.chapters));
     const hierarchy = buildHierarchy(
@@ -235,6 +241,7 @@ async function switchRevision(revision: Revision): Promise<void> {
     initDetailPanel(icd10.details, hierarchy);
     setHierarchyExpander(null);
     setCrossRefProvider(null);
+    setChordDataProvider(null);
   }
 
   rerender();
