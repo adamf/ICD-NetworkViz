@@ -140,8 +140,26 @@ function renderHeader(node: HierarchyNode, detail: DetailEntry | undefined): voi
     ? (CLASS_KIND_LABEL[detail.classKind] ?? detail.classKind)
     : baseLabel;
   if (kindEl) kindEl.textContent = label;
-  if (titleEl) titleEl.textContent = node.name;
-  if (descEl) descEl.textContent = detail?.desc || node.description || '';
+
+  // ICD-11 entities without a code use a truncated form of their
+  // title as `name` so the on-canvas label stays compact. In the
+  // detail panel we have room for the full title, so detect the
+  // truncation and promote the full description to the h2 instead.
+  const fullTitle = detail?.desc || node.description || node.name;
+  const nameClean = node.name.replace(/…$/, '').trim();
+  const isTruncation =
+    fullTitle !== node.name &&
+    fullTitle.length > nameClean.length &&
+    fullTitle.startsWith(nameClean);
+
+  if (titleEl) titleEl.textContent = isTruncation ? fullTitle : node.name;
+  if (descEl) {
+    // When we've promoted the full title to the h2, the paragraph
+    // would just repeat it — hide it to avoid duplication.
+    const descText = isTruncation ? '' : fullTitle;
+    descEl.textContent = descText;
+    descEl.style.display = descText ? '' : 'none';
+  }
 }
 
 function renderPath(_node: HierarchyNode, detail: DetailEntry | undefined): void {
