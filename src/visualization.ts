@@ -3,6 +3,7 @@
  */
 
 import * as d3 from 'd3';
+import { graphStratify, sugiyama } from 'd3-dag';
 import type {
   HierarchyNode,
   LayoutType,
@@ -191,6 +192,11 @@ function renderInternal(mode: LayoutMode): void {
     return;
   }
 
+  if (currentLayout === 'sugiyama') {
+    renderSugiyamaMode(width, height);
+    return;
+  }
+
   const root = d3.hierarchy(currentData);
 
   let nodes: D3Node[];
@@ -285,6 +291,234 @@ function renderInternal(mode: LayoutMode): void {
     .text(d => d.data.shortLabel ?? '');
 
   updateLabelVisibility();
+}
+
+/**
+ * Sugiyama layered layout.
+ *
+ * Treats the ICD-11 primary hierarchy as the backbone and layers it
+ * top-down. Adds `foundationChildElsewhere` cross-references as
+ * additional parent edges so entities that are grouped under more
+ * than one chapter visually span those chapters (true polyhierarchy).
+ * d3-dag handles the layering / decrossing / coordinate assignment.
+ */
+function renderSugiyamaMode(width: number, height: number): void {
+  if (!currentData) return;
+
+  // Flatten the rendered hierarchy.
+  type FlatNode = {
+    id: string;
+    parentIds: string[];
+    primaryParentId: string | null;
+    data: HierarchyNode;
+  };
+  const flat: FlatNode[] = [];
+  const byId = new Map<string, FlatNode>();
+  const walk = (node: HierarchyNode, primaryParentId: string | null) => {
+    if (byId.has(node.id)) return; // hierarchy is tree, but defensive
+    const f: FlatNode = {
+      id: node.id,
+      parentIds: primaryParentId ? [primaryParentId] : [],
+      primaryParentId,
+      data: node,
+    };
+    byId.set(node.id, f);
+    flat.push(f);
+    for (const c of node.children ?? []) walk(c, node.id);
+  };
+  walk(currentData, null);
+
+  // Add foundationChildElsewhere as extra parent edges (polyhierarchy).
+  // Only when both endpoints are in-scope, and only when the extra
+  // edge wouldn't create a cycle against the primary parent chain.
+  if (crossRefProvider) {
+    const isAncestorOf = (ancestorId: string, descendantId: string): boolean => {
+      let cur = byId.get(descendantId)?.primaryParentId;
+      const safety = 40;
+      for (let i = 0; cur && i < safety; i++) {
+        if (cur === ancestorId) return true;
+        cur = byId.get(cur)?.primaryParentId ?? null;
+      }
+      return false;
+    };
+
+    for (const f of flat) {
+      const refs = crossRefProvider(f.id);
+      for (const ref of refs) {
+        if (ref.kind !== 'foundationChildElsewhere') continue;
+        const child = byId.get(ref.targetId);
+        if (!child) continue;
+        if (child.parentIds.includes(f.id)) continue;
+        // Avoid cycles: the new edge adds f as a parent of child. If
+        // child is already an ancestor of f via the primary chain,
+        // adding this edge would cycle; skip it.
+        if (isAncestorOf(ref.targetId, f.id)) continue;
+        child.parentIds.push(f.id);
+      }
+    }
+  }
+
+  const builder = graphStratify()
+    .id((d: FlatNode) => d.id)
+    .parentIds((d: FlatNode) => d.parentIds);
+
+  let dag: ReturnType<typeof builder>;
+  try {
+    dag = builder(flat);
+  } catch (err) {
+    console.error('Sugiyama: failed to build DAG', err);
+    renderLayoutError(width, height, 'Failed to build the DAG for this view.');
+    return;
+  }
+
+  const layout = sugiyama().nodeSize([90, 54]).gap([18, 40]);
+
+  let w: number;
+  let h: number;
+  try {
+    const result = layout(dag);
+    w = result.width;
+    h = result.height;
+  } catch (err) {
+    console.error('Sugiyama: layout failed', err);
+    renderLayoutError(width, height, 'Layered layout failed. Try filtering to a single chapter.');
+    return;
+  }
+
+  // Stash layout positions on a parallel d3.hierarchy so the rest of
+  // the code (findNodeById, panToNode, updateLabelVisibility, etc.)
+  // can treat this like the other layouts.
+  const hier = d3.hierarchy(currentData) as D3Node;
+  const posById = new Map<string, { x: number; y: number }>();
+  for (const n of dag.nodes()) {
+    posById.set((n.data as FlatNode).id, { x: n.x, y: n.y });
+  }
+  hier.each((n) => {
+    const p = posById.get(n.data.id);
+    if (p) {
+      n.x = p.x;
+      n.y = p.y;
+    }
+  });
+  currentRoot = hier;
+
+  // Root transform: leave a margin so labels don't clip edges.
+  const root = g.append('g').attr('transform', `translate(${40}, ${40})`);
+
+  // Edges: tree (primary) vs cross-ref.
+  const linkGen = d3
+    .line<{ x: number; y: number }>()
+    .x((p) => p.x)
+    .y((p) => p.y)
+    .curve(d3.curveMonotoneY);
+
+  const treeLinks: { points: { x: number; y: number }[] }[] = [];
+  const xrefLinks: { points: { x: number; y: number }[] }[] = [];
+  for (const l of dag.links()) {
+    const sourceId = (l.source.data as FlatNode).id;
+    const targetId = (l.target.data as FlatNode).id;
+    const targetFlat = byId.get(targetId);
+    const isPrimary = targetFlat?.primaryParentId === sourceId;
+    const pts = [...l.points].map(
+      (p) => ({ x: p[0], y: p[1] }) as { x: number; y: number },
+    );
+    (isPrimary ? treeLinks : xrefLinks).push({ points: pts });
+  }
+
+  root
+    .append('g')
+    .attr('class', 'links')
+    .selectAll<SVGPathElement, { points: { x: number; y: number }[] }>('path')
+    .data(treeLinks)
+    .join('path')
+    .attr('class', 'link')
+    .attr('fill', 'none')
+    .attr('d', (d) => linkGen(d.points));
+
+  root
+    .append('g')
+    .attr('class', 'xref-links')
+    .selectAll<SVGPathElement, { points: { x: number; y: number }[] }>('path')
+    .data(xrefLinks)
+    .join('path')
+    .attr('class', 'link xref xref-foundationChildElsewhere')
+    .attr('fill', 'none')
+    .attr('d', (d) => linkGen(d.points));
+
+  // Nodes.
+  const nodes = [...dag.nodes()];
+  const nodeGroups = root
+    .append('g')
+    .attr('class', 'nodes')
+    .selectAll<SVGGElement, (typeof nodes)[number]>('g')
+    .data(nodes)
+    .join('g')
+    .attr('class', 'node')
+    .attr('transform', (d) => `translate(${d.x}, ${d.y})`)
+    // Bind hierarchy D3Node so existing click/dblclick/hover handlers work.
+    .datum((d) => {
+      const id = (d.data as FlatNode).id;
+      let match: D3Node | null = null;
+      hier.each((n) => {
+        if (n.data.id === id) match = n as D3Node;
+      });
+      return match ?? ({ data: (d.data as FlatNode).data } as D3Node);
+    });
+
+  nodeGroups
+    .append('circle')
+    .attr('r', (d) => levelSizes[d.data.level] || 4)
+    .attr('fill', (d) => levelColors[d.data.level] || '#607d8b')
+    .attr(
+      'stroke',
+      (d) =>
+        d3.color(levelColors[d.data.level] || '#607d8b')?.darker(0.5)?.toString() ||
+        '#333',
+    )
+    .on('mouseover', handleMouseOver)
+    .on('mouseout', handleMouseOut)
+    .on('click', handleClick)
+    .on('dblclick', handleDoubleClick);
+
+  // Labels to the right of each node.
+  const labels = nodeGroups
+    .append('text')
+    .attr('class', 'node-label')
+    .attr('x', 12)
+    .attr('text-anchor', 'start');
+
+  labels
+    .append('tspan')
+    .attr('class', 'label-primary')
+    .attr('x', 12)
+    .attr('dy', (d) => (d.data.shortLabel ? '-0.25em' : '0.31em'))
+    .text((d) => d.data.name);
+
+  labels
+    .filter((d) => !!d.data.shortLabel)
+    .append('tspan')
+    .attr('class', 'label-secondary')
+    .attr('x', 12)
+    .attr('dy', '1.1em')
+    .text((d) => d.data.shortLabel ?? '');
+
+  updateLabelVisibility();
+
+  // Record dimensions for centerOnOverview's fit logic.
+  void w;
+  void h;
+}
+
+function renderLayoutError(width: number, height: number, message: string): void {
+  const txt = g
+    .append('text')
+    .attr('class', 'layout-error')
+    .attr('x', width / 2)
+    .attr('y', height / 2)
+    .attr('text-anchor', 'middle')
+    .attr('fill', 'rgba(255,255,255,0.7)')
+    .attr('font-size', 14);
+  txt.text(message);
 }
 
 /**
@@ -667,6 +901,12 @@ function centerOnOverview(): void {
       padX: 80,
       padY: 80,
     });
+  } else if (currentLayout === 'sugiyama' && currentRoot) {
+    initialTransform = fitToNodes(currentRoot.descendants() as D3Node[], width, height, {
+      maxScale: 1,
+      padX: 120,
+      padY: 80,
+    });
   } else {
     // In compact mode the tree fills (width-200) x (height-100) starting
     // at (0, 0); translate right so root labels aren't clipped.
@@ -802,10 +1042,10 @@ function focusOnNode(nodeId: string): void {
   focusedNodeId = nodeId;
   extraVisibleIds = new Set();
 
-  // For the graph layout we can't re-layout meaningfully — nodes are
-  // already placed by the force simulation — so just update labels
-  // and pan to the target.
-  if (currentLayout === 'graph') {
+  // For the graph & sugiyama layouts we can't re-layout meaningfully
+  // per-subtree — node positions are set by the layout algorithm as
+  // a whole — so just update labels and pan to the target.
+  if (currentLayout === 'graph' || currentLayout === 'sugiyama') {
     updateLabelVisibility();
     const focus = findNodeById(nodeId);
     if (!focus) return;
@@ -845,10 +1085,11 @@ function updateLabelVisibility(): void {
   const visible = new Set<string>();
 
   if (focusedNodeId === null) {
-    // Graph mode packs hundreds of nodes into the same area, so show
-    // fewer labels by default to avoid an unreadable pile of text.
+    // Graph and sugiyama pack many nodes per screen area, so default
+    // to labeling only top levels to avoid an unreadable pile of text.
     // Hover tooltips still reveal the rest on demand.
-    const defaultMaxLabelLevel = currentLayout === 'graph' ? 1 : 2;
+    const defaultMaxLabelLevel =
+      currentLayout === 'graph' || currentLayout === 'sugiyama' ? 1 : 2;
     currentRoot.each((d) => {
       if (d.data.level <= defaultMaxLabelLevel) visible.add(d.data.id);
     });
@@ -894,9 +1135,12 @@ function layoutToScreen(d: D3Node): [number, number] {
     const angle = d.x - Math.PI / 2;
     return [d.y * Math.cos(angle), d.y * Math.sin(angle)];
   }
-  if (currentLayout === 'graph') {
-    // Graph uses native (x, y) coordinates from the force simulation.
-    return [d.x ?? 0, d.y ?? 0];
+  if (currentLayout === 'graph' || currentLayout === 'sugiyama') {
+    // Both store their positions directly as (x, y) — no transpose.
+    // Sugiyama adds a 40px margin translate on the root group, so its
+    // fit/pan helpers should account for that.
+    return [(d.x ?? 0) + (currentLayout === 'sugiyama' ? 40 : 0),
+            (d.y ?? 0) + (currentLayout === 'sugiyama' ? 40 : 0)];
   }
   return [d.y, d.x];
 }
@@ -938,8 +1182,11 @@ export function resetZoom(container: HTMLElement, _layoutType: LayoutType): void
   extraVisibleIds = new Set();
   currentContainer = container;
   // Tree/cluster: only re-render if we were in spacious mode.
-  // Graph / chord: no spacious mode; just re-center and restore labels.
-  const skipRerender = currentLayout === 'graph' || currentLayout === 'chord';
+  // Graph / chord / sugiyama: no spacious mode; just re-center.
+  const skipRerender =
+    currentLayout === 'graph' ||
+    currentLayout === 'chord' ||
+    currentLayout === 'sugiyama';
   if (!skipRerender && currentMode !== 'compact') {
     renderInternal('compact');
   } else {

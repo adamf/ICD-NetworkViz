@@ -32,7 +32,13 @@ export interface HierarchyNode {
   children?: HierarchyNode[];
 }
 
-export type LayoutType = 'tree' | 'radial' | 'cluster' | 'graph' | 'chord';
+export type LayoutType =
+  | 'tree'
+  | 'radial'
+  | 'cluster'
+  | 'graph'
+  | 'chord'
+  | 'sugiyama';
 
 /**
  * Aggregated chord-diagram data for ICD-11 chapter cross-references.
