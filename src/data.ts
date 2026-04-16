@@ -6,6 +6,47 @@ import * as d3 from 'd3';
 import type { Chapter, Section, Diagnosis, HierarchyNode, DetailMap } from './types';
 
 /**
+ * Curated 2-3 word labels for each ICD-10-CM chapter. Shown beneath the
+ * "Chapter N" primary label so users can see what each chapter covers
+ * without needing to hover.
+ */
+const CHAPTER_SHORT_LABELS: Record<string, string> = {
+  '1': 'Infectious diseases',
+  '2': 'Neoplasms',
+  '3': 'Blood disorders',
+  '4': 'Endocrine & metabolic',
+  '5': 'Mental & behavioral',
+  '6': 'Nervous system',
+  '7': 'Eye & adnexa',
+  '8': 'Ear & mastoid',
+  '9': 'Circulatory system',
+  '10': 'Respiratory system',
+  '11': 'Digestive system',
+  '12': 'Skin & subcutaneous',
+  '13': 'Musculoskeletal',
+  '14': 'Genitourinary',
+  '15': 'Pregnancy & childbirth',
+  '16': 'Perinatal conditions',
+  '17': 'Congenital malformations',
+  '18': 'Symptoms & signs',
+  '19': 'Injury & poisoning',
+  '20': 'External causes',
+  '21': 'Health factors',
+};
+
+/**
+ * Trim a section description to a short label on a word boundary so it
+ * fits comfortably beside a node in the visualization.
+ */
+function shortenSection(desc: string, max = 28): string {
+  const cleaned = desc.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  if (cleaned.length <= max) return cleaned;
+  const cut = cleaned.slice(0, max);
+  const lastSpace = cut.lastIndexOf(' ');
+  return (lastSpace > 10 ? cut.slice(0, lastSpace) : cut) + '…';
+}
+
+/**
  * Load all ICD-10 data from CSV + JSON files
  */
 export async function loadICD10Data(): Promise<{
@@ -46,6 +87,7 @@ export function buildHierarchy(
     id: 'ICD-10',
     name: 'ICD-10',
     description: 'International Classification of Diseases, 10th Revision',
+    shortLabel: 'Classification of Diseases',
     level: 0,
     children: []
   };
@@ -55,6 +97,7 @@ export function buildHierarchy(
       id: `chapter_${chapter.chapter_name}`,
       name: `Chapter ${chapter.chapter_name}`,
       description: chapter.description,
+      shortLabel: CHAPTER_SHORT_LABELS[chapter.chapter_name],
       level: 1,
       children: []
     };
@@ -67,6 +110,7 @@ export function buildHierarchy(
         id: section.section_name,
         name: section.section_name,
         description: section.description,
+        shortLabel: shortenSection(section.description),
         level: 2,
         children: []
       };

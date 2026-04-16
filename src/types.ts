@@ -26,6 +26,8 @@ export interface HierarchyNode {
   id: string;
   name: string;
   description: string;
+  /** Short (2-4 word) secondary label rendered beneath `name` in the viz. */
+  shortLabel?: string;
   level: number;
   children?: HierarchyNode[];
 }

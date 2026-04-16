@@ -143,11 +143,12 @@ export function renderVisualization(
     .on('mouseout', handleMouseOut)
     .on('click', handleClick);
 
-  // Add labels for top-level nodes
-  nodeGroups
+  // Add labels for top-level nodes. Each label is a <text> element with
+  // two <tspan>s so the primary name sits above a shorter descriptive
+  // subtitle (when one exists), without needing a hover.
+  const labels = nodeGroups
     .filter(d => d.data.level <= 2)
     .append('text')
-    .attr('dy', '0.31em')
     .attr('x', d => {
       if (layoutType === 'radial') {
         return d.x < Math.PI ? 15 : -15;
@@ -165,8 +166,30 @@ export function renderVisualization(
         return 'rotate(180)';
       }
       return '';
+    });
+
+  // Primary label (e.g. "Chapter 1"). Shift up half a line when a
+  // short label is present so the pair stays visually balanced.
+  labels
+    .append('tspan')
+    .attr('class', 'label-primary')
+    .attr('x', function () {
+      // Inherit x from parent <text> so both tspans align.
+      return (this.parentNode as SVGTextElement).getAttribute('x');
     })
+    .attr('dy', d => (d.data.shortLabel ? '-0.25em' : '0.31em'))
     .text(d => d.data.name);
+
+  // Secondary short label (e.g. "Infectious diseases").
+  labels
+    .filter(d => !!d.data.shortLabel)
+    .append('tspan')
+    .attr('class', 'label-secondary')
+    .attr('x', function () {
+      return (this.parentNode as SVGTextElement).getAttribute('x');
+    })
+    .attr('dy', '1.1em')
+    .text(d => d.data.shortLabel ?? '');
 
   // Center the visualization
   centerVisualization(width, height, layoutType);
