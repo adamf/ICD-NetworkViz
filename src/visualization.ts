@@ -260,8 +260,11 @@ function centerVisualization(width: number, height: number, layoutType: LayoutTy
       .translate(width / 2, height / 2)
       .scale(0.8);
   } else {
+    // Root sits at screen x = 0, and its label extends leftward (text-anchor
+    // "end") with a two-line subtitle that's ~150px wide at font-size 8.5.
+    // Leave enough left margin so the subtitle isn't clipped.
     initialTransform = d3.zoomIdentity
-      .translate(100, 50)
+      .translate(210, 50)
       .scale(0.9);
   }
 
