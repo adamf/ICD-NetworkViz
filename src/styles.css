@@ -328,6 +328,23 @@ main {
   margin-bottom: 0.75rem;
 }
 
+.detail-wiki {
+  display: inline-block;
+  margin-bottom: 0.9rem;
+  padding: 0.35rem 0.7rem;
+  background: rgba(0, 212, 255, 0.12);
+  color: #00d4ff;
+  border: 1px solid rgba(0, 212, 255, 0.35);
+  border-radius: 6px;
+  font-size: 0.78rem;
+  text-decoration: none;
+  transition: background 0.15s ease;
+}
+
+.detail-wiki:hover {
+  background: rgba(0, 212, 255, 0.22);
+}
+
 .detail-path {
   font-size: 0.75rem;
   color: rgba(255, 255, 255, 0.55);

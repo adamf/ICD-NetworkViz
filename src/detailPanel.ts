@@ -60,6 +60,7 @@ export function showDetail(node: HierarchyNode): void {
 
   const detail = ctx.details[node.id];
   renderHeader(node, detail);
+  renderWikiLink(node, detail);
   renderPath(node, detail);
   renderBody(node, detail);
 
@@ -70,6 +71,38 @@ export function showDetail(node: HierarchyNode): void {
 export function closeDetailPanel(): void {
   const panel = document.getElementById('detail-panel');
   panel?.setAttribute('aria-hidden', 'true');
+}
+
+/**
+ * Build a Wikipedia lookup URL. We use Special:Search with go=Go so
+ * Wikipedia redirects straight to the article when the cleaned-up
+ * description matches a title, and falls back to search results
+ * otherwise. The parenthetical code range ("(A00-B99)", "(A00-A09)")
+ * is stripped because it confuses the search.
+ */
+function wikipediaUrlFor(node: HierarchyNode, detail: DetailEntry | undefined): string {
+  const raw = detail?.desc || node.description || node.name;
+  const query = raw.replace(/\s*\([^)]*\)\s*$/, '').trim();
+  if (!query) return '';
+  const params = new URLSearchParams({
+    search: query,
+    title: 'Special:Search',
+    go: 'Go',
+  });
+  return `https://en.wikipedia.org/w/index.php?${params.toString()}`;
+}
+
+function renderWikiLink(node: HierarchyNode, detail: DetailEntry | undefined): void {
+  const link = document.getElementById('detail-wiki') as HTMLAnchorElement | null;
+  if (!link) return;
+  const url = wikipediaUrlFor(node, detail);
+  if (!url) {
+    link.style.display = 'none';
+    return;
+  }
+  link.style.display = '';
+  link.href = url;
+  link.textContent = 'Look up on Wikipedia →';
 }
 
 function renderHeader(node: HierarchyNode, detail: DetailEntry | undefined): void {
