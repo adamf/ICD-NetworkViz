@@ -10,7 +10,6 @@ import './styles.css';
 import {
   loadICD10Data,
   buildHierarchy,
-  countNodes,
   loadICD11Bundle,
   buildICD11Hierarchy,
   buildICD11Details,
@@ -96,7 +95,6 @@ async function init(): Promise<void> {
     initDetailPanel(data.details, hierarchy);
     applyLayoutClass(currentLayout);
     renderVisualization(hierarchy, currentLayout, container);
-    updateStats(hierarchy, data.chapters.length);
     setupEventListeners();
   } catch (error) {
     console.error('Failed to load ICD-10 data:', error);
@@ -141,13 +139,6 @@ function icd11ChapterOptions(bundle: ICD11Bundle): { name: string; description: 
     .filter((v): v is { name: string; description: string } => v !== null);
 }
 
-function updateStats(hierarchy: HierarchyNode, chapterCount: number): void {
-  const nodeCountEl = document.getElementById('node-count');
-  const chapterCountEl = document.getElementById('chapter-count');
-  if (nodeCountEl) nodeCountEl.textContent = countNodes(hierarchy).toString();
-  if (chapterCountEl) chapterCountEl.textContent = chapterCount.toString();
-}
-
 function currentHierarchy(): HierarchyNode | null {
   if (currentRevision === 'icd10') {
     if (!icd10) return null;
@@ -162,18 +153,6 @@ function currentHierarchy(): HierarchyNode | null {
   return buildICD11Hierarchy(icd11, currentChapterFilter);
 }
 
-function currentChapterCount(): number {
-  if (currentRevision === 'icd10' && icd10) {
-    return currentChapterFilter === 'all' ? icd10.chapters.length : 1;
-  }
-  if (currentRevision === 'icd11' && icd11) {
-    const root = icd11.entities[icd11.rootId];
-    if (!root) return 0;
-    return currentChapterFilter === 'all' ? root.children.length : 1;
-  }
-  return 0;
-}
-
 function rerender(): void {
   if (!containerRef) return;
   const hierarchy = currentHierarchy();
@@ -182,7 +161,6 @@ function rerender(): void {
   closeDetailPanel();
   applyLayoutClass(currentLayout);
   renderVisualization(hierarchy, currentLayout, containerRef);
-  updateStats(hierarchy, currentChapterCount());
 }
 
 /** Switch the active revision. Lazy-loads ICD-11 on first switch. */
