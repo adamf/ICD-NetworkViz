@@ -394,14 +394,17 @@ function handleDoubleClick(event: MouseEvent, d: D3Node): void {
   event.preventDefault();
   cancelPendingClick();
 
-  // Only re-layout + zoom when the clicked node is a direct parent of
-  // leaves (e.g. A17 -> A17.0...A17.9). For higher-up nodes the zoom
-  // view sprawls and is hard to read, so skip straight to the detail
-  // panel instead.
+  // Always update the detail panel so it reflects whichever node the
+  // user is engaging with, even when they double-click a new node
+  // with the panel already open on a different one.
+  showDetail(d.data);
+
+  // Additionally re-layout + zoom when the node is a direct parent
+  // of leaves (e.g. A17 -> A17.0...A17.9). For higher-up nodes the
+  // zoom view sprawls and is hard to read, so we skip the focus and
+  // just leave the panel update.
   if (isLeafParent(d)) {
     focusOnNode(d.data.id);
-  } else {
-    showDetail(d.data);
   }
 }
 
