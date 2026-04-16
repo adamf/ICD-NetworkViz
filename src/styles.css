@@ -285,6 +285,21 @@ main {
   overflow-y: auto;
   transform: translateX(calc(100% + 2rem));
   transition: transform 0.25s ease, left 0s, right 0s;
+  /* Let clicks fall through to nodes underneath the panel (e.g. the
+   * root and early chapters in tree view). Interactive children
+   * below opt back in via pointer-events: auto. */
+  pointer-events: none;
+}
+
+.detail-panel > * {
+  pointer-events: auto;
+}
+
+.detail-panel .detail-kind,
+.detail-panel .detail-path,
+.detail-panel .detail-desc,
+.detail-panel .detail-title {
+  pointer-events: none;
 }
 
 .detail-panel[aria-hidden='false'] {

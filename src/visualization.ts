@@ -124,7 +124,7 @@ function renderInternal(mode: LayoutMode): void {
   let nodes: D3Node[];
   switch (currentLayout) {
     case 'radial':
-      nodes = createRadialLayout(root, width, height);
+      nodes = createRadialLayout(root, width, height, mode);
       break;
     case 'cluster':
       nodes = createClusterLayout(root, width, height, mode);
@@ -251,16 +251,36 @@ function createClusterLayout(
   return layout(root).descendants() as D3Node[];
 }
 
+/**
+ * Radial tree.
+ *
+ * Compact mode packs the full tree into a single ring that fits the
+ * viewport (used for overview). Spacious mode inflates the radius
+ * ~4x and flattens the depth-based separation so leaves get enough
+ * arc length for their labels when the user focuses on a leaf parent.
+ * The overall ring becomes much larger than the viewport; the focus
+ * fit transform zooms to just the focused subtree.
+ */
 function createRadialLayout(
   root: d3.HierarchyNode<HierarchyNode>,
   width: number,
-  height: number
+  height: number,
+  mode: LayoutMode,
 ): D3Node[] {
-  const radius = Math.min(width, height) / 2 - 100;
-  const treeLayout = d3.tree<HierarchyNode>()
-    .size([2 * Math.PI, radius])
-    .separation((a, b) => (a.parent === b.parent ? 1 : 2) / a.depth);
-  return treeLayout(root).descendants() as D3Node[];
+  const baseRadius = Math.min(width, height) / 2 - 100;
+  const layout = d3.tree<HierarchyNode>();
+
+  if (mode === 'spacious') {
+    layout
+      .size([2 * Math.PI, baseRadius * 4])
+      .separation((a, b) => (a.parent === b.parent ? 1.5 : 3));
+  } else {
+    layout
+      .size([2 * Math.PI, baseRadius])
+      .separation((a, b) => (a.parent === b.parent ? 1 : 2) / a.depth);
+  }
+
+  return layout(root).descendants() as D3Node[];
 }
 
 function createRadialLinkGenerator() {
