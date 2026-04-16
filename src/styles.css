@@ -300,12 +300,19 @@ main {
   stroke-width: 1px;
 }
 
+/* Graph mode: fade the parent/child backbone so the color-coded
+ * cross-ref edges can be the visual focus (those are what make the
+ * graph layout interesting). */
+body.layout-graph .link:not(.xref) {
+  stroke: rgba(255, 255, 255, 0.08);
+}
+
 /* Force-graph cross-reference edges. Color-coded by kind so the
  * different polyhierarchy relationships can be told apart. */
 .link.xref {
-  stroke-width: 1.2px;
-  stroke-dasharray: 4 3;
-  opacity: 0.75;
+  stroke-width: 1.3px;
+  stroke-dasharray: 5 3;
+  opacity: 0.85;
 }
 
 .link.xref-foundationChildElsewhere { stroke: #ffb84d; }

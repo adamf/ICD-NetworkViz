@@ -317,15 +317,15 @@ function renderGraphMode(width: number, height: number): void {
       d3
         .forceLink<D3Node, Link>(links)
         .id((d) => d.data.id)
-        .distance((l) => (l.kind === 'tree' ? 45 : 110))
-        .strength((l) => (l.kind === 'tree' ? 0.7 : 0.05)),
+        .distance((l) => (l.kind === 'tree' ? 75 : 160))
+        .strength((l) => (l.kind === 'tree' ? 0.65 : 0.05)),
     )
-    .force('charge', d3.forceManyBody<D3Node>().strength(-140))
+    .force('charge', d3.forceManyBody<D3Node>().strength(-260))
     .force('center', d3.forceCenter(cx, cy))
-    .force('collide', d3.forceCollide<D3Node>().radius(16))
+    .force('collide', d3.forceCollide<D3Node>().radius(24))
     .stop();
 
-  for (let i = 0; i < 400; i++) sim.tick();
+  for (let i = 0; i < 500; i++) sim.tick();
 
   currentRoot = hierarchy;
 
@@ -661,8 +661,12 @@ function updateLabelVisibility(): void {
   const visible = new Set<string>();
 
   if (focusedNodeId === null) {
+    // Graph mode packs hundreds of nodes into the same area, so show
+    // fewer labels by default to avoid an unreadable pile of text.
+    // Hover tooltips still reveal the rest on demand.
+    const defaultMaxLabelLevel = currentLayout === 'graph' ? 1 : 2;
     currentRoot.each((d) => {
-      if (d.data.level <= 2) visible.add(d.data.id);
+      if (d.data.level <= defaultMaxLabelLevel) visible.add(d.data.id);
     });
   } else {
     const focus = findNodeById(focusedNodeId);
