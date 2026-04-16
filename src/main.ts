@@ -17,6 +17,16 @@ let currentChapterFilter = 'all';
 let chapters: Chapter[] = [];
 
 /**
+ * Mirror the active layout as a body class so layout-dependent UI
+ * (like the detail panel's left/right docking) can react via CSS.
+ */
+function applyLayoutClass(layout: LayoutType): void {
+  const body = document.body;
+  body.classList.remove('layout-tree', 'layout-cluster', 'layout-radial');
+  body.classList.add(`layout-${layout}`);
+}
+
+/**
  * Initialize the application
  */
 async function init(): Promise<void> {
@@ -53,6 +63,7 @@ async function init(): Promise<void> {
     // Initialize the detail panel with the lookup table + first hierarchy.
     initDetailPanel(data.details, hierarchy);
 
+    applyLayoutClass(currentLayout);
     renderVisualization(hierarchy, currentLayout, container);
 
     // Update stats
@@ -117,6 +128,7 @@ function setupEventListeners(
       );
       refreshIndex(hierarchy);
       closeDetailPanel();
+      applyLayoutClass(currentLayout);
       renderVisualization(hierarchy, currentLayout, container);
     });
   }

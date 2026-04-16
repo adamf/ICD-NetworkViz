@@ -373,7 +373,22 @@ function handleDoubleClick(event: MouseEvent, d: D3Node): void {
   event.stopPropagation();
   event.preventDefault();
   cancelPendingClick();
-  focusOnNode(d.data.id);
+
+  // Only re-layout + zoom when the clicked node is a direct parent of
+  // leaves (e.g. A17 -> A17.0...A17.9). For higher-up nodes the zoom
+  // view sprawls and is hard to read, so skip straight to the detail
+  // panel instead.
+  if (isLeafParent(d)) {
+    focusOnNode(d.data.id);
+  } else {
+    showDetail(d.data);
+  }
+}
+
+function isLeafParent(d: D3Node): boolean {
+  const kids = d.children ?? [];
+  if (kids.length === 0) return false;
+  return kids.every((c) => !c.children || c.children.length === 0);
 }
 
 /**

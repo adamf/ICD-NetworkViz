@@ -262,7 +262,11 @@ main {
   stroke-width: 1px;
 }
 
-/* Detail panel */
+/* Detail panel.
+ * Default position is right-side (used for radial). The tree/cluster
+ * layouts dock it on the left instead, since children of a focused
+ * node appear on the right and shouldn't be covered up. Positioning
+ * is switched by a class on <body>. */
 .detail-panel {
   position: fixed;
   top: 4.5rem;
@@ -280,10 +284,22 @@ main {
   z-index: 20;
   overflow-y: auto;
   transform: translateX(calc(100% + 2rem));
-  transition: transform 0.25s ease;
+  transition: transform 0.25s ease, left 0s, right 0s;
 }
 
 .detail-panel[aria-hidden='false'] {
+  transform: translateX(0);
+}
+
+body.layout-tree .detail-panel,
+body.layout-cluster .detail-panel {
+  right: auto;
+  left: 1rem;
+  transform: translateX(calc(-100% - 2rem));
+}
+
+body.layout-tree .detail-panel[aria-hidden='false'],
+body.layout-cluster .detail-panel[aria-hidden='false'] {
   transform: translateX(0);
 }
 
