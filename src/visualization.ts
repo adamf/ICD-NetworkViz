@@ -100,6 +100,22 @@ export function setChordDataProvider(fn: ChordDataProvider | null): void {
   chordDataProvider = fn;
 }
 
+/**
+ * Optional provider returning the FULL hierarchy (no depth cap) so
+ * the sugiyama view can drill into any subtree on demand without
+ * being limited by the default render cap. Cached where possible by
+ * the caller (ICD-11 rebuilds are fast but not free).
+ */
+export type FullHierarchyProvider = () => HierarchyNode | null;
+let fullHierarchyProvider: FullHierarchyProvider | null = null;
+
+export function setFullHierarchyProvider(fn: FullHierarchyProvider | null): void {
+  fullHierarchyProvider = fn;
+}
+
+/** Node ids whose children are expanded in the sugiyama view. */
+let sugiyamaExpandedIds = new Set<string>();
+
 /** Look up a HierarchyNode by id for chord click-through. */
 function hierarchyNodeById(id: string): HierarchyNode | null {
   if (!currentData) return null;
@@ -165,6 +181,7 @@ export function renderVisualization(
   currentContainer = container;
   focusedNodeId = null;
   extraVisibleIds = new Set();
+  sugiyamaExpandedIds = new Set();
   renderInternal('compact');
   centerOnOverview();
 }
@@ -303,30 +320,42 @@ function renderInternal(mode: LayoutMode): void {
  * d3-dag handles the layering / decrossing / coordinate assignment.
  */
 function renderSugiyamaMode(width: number, height: number): void {
-  if (!currentData) return;
+  // Prefer the full hierarchy so drilling reveals deeper levels the
+  // default currentData cap would hide.
+  const source = fullHierarchyProvider?.() ?? currentData;
+  if (!source) return;
 
-  // Flatten the rendered hierarchy.
+  // Flatten the hierarchy, but stop at any node whose children aren't
+  // expanded (except for the root, which always expands its chapters).
   type FlatNode = {
     id: string;
     parentIds: string[];
     primaryParentId: string | null;
     data: HierarchyNode;
+    /** Whether this node has children in the full source data. */
+    hasChildren: boolean;
   };
   const flat: FlatNode[] = [];
   const byId = new Map<string, FlatNode>();
   const walk = (node: HierarchyNode, primaryParentId: string | null) => {
-    if (byId.has(node.id)) return; // hierarchy is tree, but defensive
+    if (byId.has(node.id)) return; // defensive
+    const hasChildren = (node.children?.length ?? 0) > 0;
     const f: FlatNode = {
       id: node.id,
       parentIds: primaryParentId ? [primaryParentId] : [],
       primaryParentId,
       data: node,
+      hasChildren,
     };
     byId.set(node.id, f);
     flat.push(f);
-    for (const c of node.children ?? []) walk(c, node.id);
+    // Descend only if this node is expanded or is the root (root's
+    // children are the chapters — the baseline view).
+    if (node.level === 0 || sugiyamaExpandedIds.has(node.id)) {
+      for (const c of node.children ?? []) walk(c, node.id);
+    }
   };
-  walk(currentData, null);
+  walk(source, null);
 
   // Add foundationChildElsewhere as extra parent edges (polyhierarchy).
   // Only when both endpoints are in-scope, and only when the extra
@@ -387,8 +416,21 @@ function renderSugiyamaMode(width: number, height: number): void {
 
   // Stash layout positions on a parallel d3.hierarchy so the rest of
   // the code (findNodeById, panToNode, updateLabelVisibility, etc.)
-  // can treat this like the other layouts.
-  const hier = d3.hierarchy(currentData) as D3Node;
+  // can treat this like the other layouts. Build it from the FILTERED
+  // node set so only currently-shown nodes can be found / focused.
+  const nodeDataById = new Map<string, HierarchyNode>();
+  for (const f of flat) {
+    nodeDataById.set(f.id, { ...f.data, children: undefined });
+  }
+  for (const f of flat) {
+    const parent = f.primaryParentId ? nodeDataById.get(f.primaryParentId) : null;
+    const self = nodeDataById.get(f.id)!;
+    if (parent) {
+      (parent.children ??= []).push(self);
+    }
+  }
+  const rootData = source.level === 0 ? nodeDataById.get(source.id) : null;
+  const hier = d3.hierarchy(rootData ?? nodeDataById.get(flat[0].id)!) as D3Node;
   const posById = new Map<string, { x: number; y: number }>();
   for (const n of dag.nodes()) {
     posById.set((n.data as FlatNode).id, { x: n.x, y: n.y });
@@ -445,25 +487,32 @@ function renderSugiyamaMode(width: number, height: number): void {
     .attr('fill', 'none')
     .attr('d', (d) => linkGen(d.points));
 
-  // Nodes.
-  const nodes = [...dag.nodes()];
+  // Map each rendered D3Node to its FlatNode so per-node info
+  // (hasChildren for the "+" marker) is available at render time
+  // without leaking off the D3Node datum.
+  const flatByD3 = new Map<D3Node, FlatNode>();
+  const renderedD3: D3Node[] = [];
+  for (const dn of dag.nodes()) {
+    const f = dn.data as FlatNode;
+    let match: D3Node | null = null;
+    hier.each((n) => {
+      if (match) return;
+      if (n.data.id === f.id) match = n as D3Node;
+    });
+    if (match) {
+      flatByD3.set(match, f);
+      renderedD3.push(match);
+    }
+  }
+
   const nodeGroups = root
     .append('g')
     .attr('class', 'nodes')
-    .selectAll<SVGGElement, (typeof nodes)[number]>('g')
-    .data(nodes)
+    .selectAll<SVGGElement, D3Node>('g')
+    .data(renderedD3)
     .join('g')
     .attr('class', 'node')
-    .attr('transform', (d) => `translate(${d.x}, ${d.y})`)
-    // Bind hierarchy D3Node so existing click/dblclick/hover handlers work.
-    .datum((d) => {
-      const id = (d.data as FlatNode).id;
-      let match: D3Node | null = null;
-      hier.each((n) => {
-        if (n.data.id === id) match = n as D3Node;
-      });
-      return match ?? ({ data: (d.data as FlatNode).data } as D3Node);
-    });
+    .attr('transform', (d) => `translate(${d.x ?? 0}, ${d.y ?? 0})`);
 
   nodeGroups
     .append('circle')
@@ -479,6 +528,24 @@ function renderSugiyamaMode(width: number, height: number): void {
     .on('mouseout', handleMouseOut)
     .on('click', handleClick)
     .on('dblclick', handleDoubleClick);
+
+  // "+" marker on collapsible nodes (have children in the full data
+  // but their children are not currently rendered). Indicates the
+  // user can double-click to expand.
+  nodeGroups
+    .filter((d) => {
+      const f = flatByD3.get(d);
+      return (
+        !!f?.hasChildren &&
+        !sugiyamaExpandedIds.has(d.data.id) &&
+        d.data.level !== 0
+      );
+    })
+    .append('text')
+    .attr('class', 'sugiyama-expand-indicator')
+    .attr('text-anchor', 'middle')
+    .attr('dy', '0.33em')
+    .text('+');
 
   // Labels to the right of each node.
   const labels = nodeGroups
@@ -504,7 +571,6 @@ function renderSugiyamaMode(width: number, height: number): void {
 
   updateLabelVisibility();
 
-  // Record dimensions for centerOnOverview's fit logic.
   void w;
   void h;
 }
@@ -1006,6 +1072,30 @@ function handleDoubleClick(event: MouseEvent, d: D3Node): void {
   // with the panel already open on a different one.
   showDetail(d.data);
 
+  // In sugiyama mode double-click toggles expansion of a node's
+  // children (progressive disclosure) instead of zooming.
+  if (currentLayout === 'sugiyama') {
+    const id = d.data.id;
+    if (sugiyamaExpandedIds.has(id)) {
+      sugiyamaExpandedIds.delete(id);
+      // Also collapse any of its expanded descendants.
+      const full = fullHierarchyProvider?.();
+      if (full) {
+        const stack: HierarchyNode[] = [...(findInHierarchy(full, id)?.children ?? [])];
+        while (stack.length) {
+          const n = stack.pop()!;
+          sugiyamaExpandedIds.delete(n.id);
+          if (n.children) stack.push(...n.children);
+        }
+      }
+    } else {
+      sugiyamaExpandedIds.add(id);
+    }
+    renderInternal('compact');
+    centerOnOverview();
+    return;
+  }
+
   // If an expander is set (ICD-11 mode), rebuild the hierarchy with
   // this node's subtree unfolded before focusing. Returning a new
   // tree means "this node has deeper content; drill in".
@@ -1023,6 +1113,16 @@ function handleDoubleClick(event: MouseEvent, d: D3Node): void {
   if (isLeafParent(d)) {
     focusOnNode(d.data.id);
   }
+}
+
+function findInHierarchy(root: HierarchyNode, id: string): HierarchyNode | null {
+  const stack: HierarchyNode[] = [root];
+  while (stack.length) {
+    const n = stack.pop()!;
+    if (n.id === id) return n;
+    if (n.children) stack.push(...n.children);
+  }
+  return null;
 }
 
 function isLeafParent(d: D3Node): boolean {
@@ -1180,14 +1280,14 @@ export function panToNode(nodeId: string): void {
 export function resetZoom(container: HTMLElement, _layoutType: LayoutType): void {
   focusedNodeId = null;
   extraVisibleIds = new Set();
+  sugiyamaExpandedIds = new Set();
   currentContainer = container;
   // Tree/cluster: only re-render if we were in spacious mode.
-  // Graph / chord / sugiyama: no spacious mode; just re-center.
-  const skipRerender =
-    currentLayout === 'graph' ||
-    currentLayout === 'chord' ||
-    currentLayout === 'sugiyama';
-  if (!skipRerender && currentMode !== 'compact') {
+  // Graph / chord: no spacious mode; just re-center.
+  // Sugiyama: re-render so the collapsed (default) view is restored.
+  if (currentLayout === 'sugiyama') {
+    renderInternal('compact');
+  } else if (currentLayout !== 'graph' && currentLayout !== 'chord' && currentMode !== 'compact') {
     renderInternal('compact');
   } else {
     updateLabelVisibility();

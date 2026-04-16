@@ -23,6 +23,7 @@ import {
   setHierarchyExpander,
   setCrossRefProvider,
   setChordDataProvider,
+  setFullHierarchyProvider,
 } from './visualization';
 import { initDetailPanel, refreshIndex, closeDetailPanel } from './detailPanel';
 import type {
@@ -230,6 +231,13 @@ async function switchRevision(revision: Revision): Promise<void> {
     });
     setCrossRefProvider(icd11CrossRefProvider);
     setChordDataProvider(() => icd11Chord);
+    setFullHierarchyProvider(() => {
+      if (!icd11) return null;
+      // Full tree, no depth cap — used by sugiyama's drill-down.
+      return buildICD11Hierarchy(icd11, currentChapterFilter, {
+        maxDepth: 99,
+      });
+    });
   } else if (icd10) {
     populateChapterFilter(icd10ChapterOptions(icd10.chapters));
     const hierarchy = buildHierarchy(
@@ -242,6 +250,7 @@ async function switchRevision(revision: Revision): Promise<void> {
     setHierarchyExpander(null);
     setCrossRefProvider(null);
     setChordDataProvider(null);
+    setFullHierarchyProvider(() => hierarchy);
   }
 
   rerender();

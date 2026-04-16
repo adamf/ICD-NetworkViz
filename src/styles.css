@@ -360,6 +360,14 @@ body.layout-graph .link:not(.xref) {
   font-family: inherit;
 }
 
+/* Expand marker on collapsed sugiyama nodes. */
+.sugiyama-expand-indicator {
+  font-size: 10px;
+  font-weight: 700;
+  fill: rgba(0, 0, 0, 0.85);
+  pointer-events: none;
+}
+
 /* Detail panel.
  * Default position is right-side (used for radial). The tree/cluster
  * layouts dock it on the left instead, since children of a focused
