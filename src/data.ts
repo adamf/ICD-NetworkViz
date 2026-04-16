@@ -3,23 +3,25 @@
  */
 
 import * as d3 from 'd3';
-import type { Chapter, Section, Diagnosis, HierarchyNode } from './types';
+import type { Chapter, Section, Diagnosis, HierarchyNode, DetailMap } from './types';
 
 /**
- * Load all ICD-10 data from CSV files
+ * Load all ICD-10 data from CSV + JSON files
  */
 export async function loadICD10Data(): Promise<{
   chapters: Chapter[];
   sections: Section[];
   diagnoses: Diagnosis[];
+  details: DetailMap;
 }> {
-  const [chapters, sections, diagnoses] = await Promise.all([
+  const [chapters, sections, diagnoses, details] = await Promise.all([
     d3.csv('chapters.csv') as Promise<Chapter[]>,
     d3.csv('sections.csv') as Promise<Section[]>,
-    d3.csv('diagnoses.csv') as Promise<Diagnosis[]>
+    d3.csv('diagnoses.csv') as Promise<Diagnosis[]>,
+    d3.json<DetailMap>('icd10_details.json').then((d) => d ?? {})
   ]);
 
-  return { chapters, sections, diagnoses };
+  return { chapters, sections, diagnoses, details };
 }
 
 /**

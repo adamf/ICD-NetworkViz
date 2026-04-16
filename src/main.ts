@@ -8,6 +8,7 @@
 import './styles.css';
 import { loadICD10Data, buildHierarchy, countNodes } from './data';
 import { initVisualization, renderVisualization, resetZoom } from './visualization';
+import { initDetailPanel, refreshIndex, closeDetailPanel } from './detailPanel';
 import type { LayoutType, Chapter } from './types';
 
 // State
@@ -48,6 +49,9 @@ async function init(): Promise<void> {
       data.diagnoses,
       currentChapterFilter
     );
+
+    // Initialize the detail panel with the lookup table + first hierarchy.
+    initDetailPanel(data.details, hierarchy);
 
     renderVisualization(hierarchy, currentLayout, container);
 
@@ -111,6 +115,8 @@ function setupEventListeners(
         data.diagnoses,
         currentChapterFilter
       );
+      refreshIndex(hierarchy);
+      closeDetailPanel();
       renderVisualization(hierarchy, currentLayout, container);
     });
   }
@@ -126,6 +132,8 @@ function setupEventListeners(
         data.diagnoses,
         currentChapterFilter
       );
+      refreshIndex(hierarchy);
+      closeDetailPanel();
       renderVisualization(hierarchy, currentLayout, container);
       updateStats(hierarchy, currentChapterFilter === 'all' ? chapters.length : 1);
     });

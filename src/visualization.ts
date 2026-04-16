@@ -4,6 +4,7 @@
 
 import * as d3 from 'd3';
 import type { HierarchyNode, LayoutType } from './types';
+import { showDetail } from './detailPanel';
 
 // Color scheme for different levels
 const levelColors: Record<number, string> = {
@@ -277,14 +278,14 @@ function handleMouseOut(): void {
 }
 
 /**
- * Handle click event - expand/collapse node
+ * Handle click event - open the detail panel for the clicked node.
  */
 function handleClick(
-  _event: MouseEvent,
+  event: MouseEvent,
   d: D3Node
 ): void {
-  // Log the clicked node for debugging
-  console.log('Clicked node:', d.data.name, d.data.description);
+  event.stopPropagation();
+  showDetail(d.data);
 }
 
 /**

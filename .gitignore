@@ -27,3 +27,6 @@ npm-debug.log*
 
 # Jupyter Notebook (legacy)
 .ipynb_checkpoints
+
+# Local cache for build scripts (downloaded source data)
+.cache/
