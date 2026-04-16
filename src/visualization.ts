@@ -400,18 +400,68 @@ function renderSugiyamaMode(width: number, height: number): void {
     return;
   }
 
-  const layout = sugiyama().nodeSize([90, 54]).gap([18, 40]);
-
   let w: number;
   let h: number;
-  try {
-    const result = layout(dag);
-    w = result.width;
-    h = result.height;
-  } catch (err) {
-    console.error('Sugiyama: layout failed', err);
-    renderLayoutError(width, height, 'Layered layout failed. Try filtering to a single chapter.');
-    return;
+
+  if (sugiyamaExpandedIds.size === 0 && source.level === 0) {
+    // Default overview: a single d3-dag row of 28 chapters is ~3000px
+    // wide, barely readable at viewport scale. Manually split the
+    // children so half sit above the root and half below, halving
+    // the overall width.
+    const allDagNodes = [...dag.nodes()];
+    const rootId = source.id;
+    const rootNode = allDagNodes.find((n) => (n.data as FlatNode).id === rootId);
+    const childNodes = allDagNodes.filter(
+      (n) => (n.data as FlatNode).primaryParentId === rootId,
+    );
+    // Preserve the declared order of children for predictable layout.
+    const orderIndex = new Map<string, number>();
+    (source.children ?? []).forEach((c, i) => orderIndex.set(c.id, i));
+    childNodes.sort(
+      (a, b) =>
+        (orderIndex.get((a.data as FlatNode).id) ?? 0) -
+        (orderIndex.get((b.data as FlatNode).id) ?? 0),
+    );
+
+    const n = childNodes.length;
+    const halfUp = Math.ceil(n / 2);
+    const halfDn = n - halfUp;
+    const spacingX = 170;
+    const rowY = 110;
+    if (rootNode) {
+      rootNode.x = 0;
+      rootNode.y = 0;
+    }
+    for (let i = 0; i < halfUp; i++) {
+      const node = childNodes[i];
+      node.x = (i - (halfUp - 1) / 2) * spacingX;
+      node.y = -rowY;
+    }
+    for (let i = 0; i < halfDn; i++) {
+      const node = childNodes[halfUp + i];
+      node.x = (i - (halfDn - 1) / 2) * spacingX;
+      node.y = rowY;
+    }
+
+    const xs = allDagNodes.map((n) => n.x ?? 0);
+    const ys = allDagNodes.map((n) => n.y ?? 0);
+    w = Math.max(...xs) - Math.min(...xs) + 200;
+    h = Math.max(...ys) - Math.min(...ys) + 200;
+  } else {
+    const layout = sugiyama().nodeSize([90, 54]).gap([18, 40]);
+    try {
+      const result = layout(dag);
+      w = result.width;
+      h = result.height;
+    } catch (err) {
+      console.error('Sugiyama: layout failed', err);
+      renderLayoutError(
+        width,
+        height,
+        'Layered layout failed. Try filtering to a single chapter.',
+      );
+      return;
+    }
   }
 
   // Stash layout positions on a parallel d3.hierarchy so the rest of
@@ -461,9 +511,17 @@ function renderSugiyamaMode(width: number, height: number): void {
     const targetId = (l.target.data as FlatNode).id;
     const targetFlat = byId.get(targetId);
     const isPrimary = targetFlat?.primaryParentId === sourceId;
-    const pts = [...l.points].map(
-      (p) => ({ x: p[0], y: p[1] }) as { x: number; y: number },
-    );
+    // In the overview branch we didn't run layout(dag), so `l.points`
+    // is empty — fall back to a straight source->target segment.
+    const pts =
+      l.points && [...l.points].length > 0
+        ? [...l.points].map(
+            (p) => ({ x: p[0], y: p[1] }) as { x: number; y: number },
+          )
+        : [
+            { x: l.source.x ?? 0, y: l.source.y ?? 0 },
+            { x: l.target.x ?? 0, y: l.target.y ?? 0 },
+          ];
     (isPrimary ? treeLinks : xrefLinks).push({ points: pts });
   }
 
