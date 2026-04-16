@@ -30,3 +30,6 @@ npm-debug.log*
 
 # Local cache for build scripts (downloaded source data)
 .cache/
+
+# Claude Code state
+.claude/

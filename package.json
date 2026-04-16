@@ -9,7 +9,9 @@
     "preview": "vite preview",
     "lint": "eslint src --ext .ts,.tsx",
     "typecheck": "tsc --noEmit",
-    "build:details": "node scripts/build-icd10-details.mjs"
+    "build:details": "node scripts/build-icd10-details.mjs",
+    "fetch:icd11": "node scripts/fetch-icd11.mjs",
+    "build:icd11": "node scripts/build-icd11.mjs"
   },
   "devDependencies": {
     "@types/d3": "^7.4.3",

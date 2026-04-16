@@ -18,8 +18,29 @@ const KIND_LABEL: Record<DetailEntry['kind'] | 'root', string> = {
   chapter: 'Chapter',
   section: 'Section',
   diag: 'Diagnosis Code',
+  icd11: 'ICD-11 Entity',
   root: 'Classification',
 };
+
+const CLASS_KIND_LABEL: Record<string, string> = {
+  chapter: 'Chapter',
+  block: 'Block',
+  category: 'Category',
+  grouping: 'Grouping',
+  window: 'Window',
+};
+
+const REFERENCE_SECTIONS: {
+  key: keyof DetailEntry;
+  label: string;
+  cls: string;
+}[] = [
+  { key: 'foundationChildElsewhere', label: 'Also grouped under', cls: 'inclusion' },
+  { key: 'exclusionRefs', label: 'Exclusions', cls: 'excludes1' },
+  { key: 'inclusionRefs', label: 'Inclusions', cls: 'includes' },
+  { key: 'relatedPerinatal', label: 'Related in perinatal chapter', cls: '' },
+  { key: 'relatedMaternal', label: 'Related in maternal chapter', cls: '' },
+];
 
 const NOTE_SECTIONS: { key: keyof DetailEntry; label: string; cls: string }[] = [
   { key: 'includes', label: 'Includes', cls: 'includes' },
@@ -111,7 +132,13 @@ function renderHeader(node: HierarchyNode, detail: DetailEntry | undefined): voi
   const descEl = document.getElementById('detail-desc');
 
   const kind = detail?.kind ?? (node.level === 0 ? 'root' : 'diag');
-  if (kindEl) kindEl.textContent = KIND_LABEL[kind] ?? '';
+  const baseLabel = KIND_LABEL[kind] ?? '';
+  // For ICD-11, prefer the more specific classKind ("Block",
+  // "Category") over the generic "ICD-11 Entity".
+  const label = detail?.classKind
+    ? (CLASS_KIND_LABEL[detail.classKind] ?? detail.classKind)
+    : baseLabel;
+  if (kindEl) kindEl.textContent = label;
   if (titleEl) titleEl.textContent = node.name;
   if (descEl) descEl.textContent = detail?.desc || node.description || '';
 }
@@ -153,11 +180,45 @@ function renderBody(node: HierarchyNode, detail: DetailEntry | undefined): void 
   if (!body) return;
   body.innerHTML = '';
 
-  // Render note sections.
+  // ICD-11 definition paragraph, when present.
+  if (detail?.definition) {
+    const section = document.createElement('section');
+    const h = document.createElement('h3');
+    h.textContent = 'Definition';
+    section.appendChild(h);
+    const p = document.createElement('p');
+    p.style.lineHeight = '1.5';
+    p.style.color = 'rgba(255,255,255,0.88)';
+    p.textContent = detail.definition;
+    section.appendChild(p);
+    body.appendChild(section);
+  }
+
+  // ICD-11 link to WHO's official browser.
+  if (detail?.browserUrl) {
+    const section = document.createElement('section');
+    const a = document.createElement('a');
+    a.href = detail.browserUrl;
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    a.className = 'detail-wiki';
+    a.textContent = 'View on WHO ICD-11 Browser →';
+    section.appendChild(a);
+    body.appendChild(section);
+  }
+
+  // ICD-10 note sections.
   for (const { key, label, cls } of NOTE_SECTIONS) {
     const items = detail?.[key] as string[] | undefined;
     if (!items?.length) continue;
     body.appendChild(noteSection(label, items, cls));
+  }
+
+  // ICD-11 cross-reference sections (clickable into the graph).
+  for (const { key, label, cls } of REFERENCE_SECTIONS) {
+    const items = detail?.[key] as { id: string; title: string }[] | undefined;
+    if (!items?.length) continue;
+    body.appendChild(referenceSection(label, items, cls));
   }
 
   // 7th character extension definitions, when present.
@@ -218,6 +279,53 @@ function noteSection(label: string, items: string[], cls: string): HTMLElement {
   for (const item of items) {
     const li = document.createElement('li');
     li.textContent = item;
+    ul.appendChild(li);
+  }
+  section.appendChild(ul);
+  return section;
+}
+
+/**
+ * Render a list of ICD-11 cross-references. Items that resolve to a
+ * node in the current hierarchy become clickable (drill into them);
+ * others render as dim static text.
+ */
+function referenceSection(
+  label: string,
+  items: { id: string; title: string }[],
+  cls: string,
+): HTMLElement {
+  const section = document.createElement('section');
+  const h = document.createElement('h3');
+  h.textContent = label;
+  if (cls) h.classList.add(cls);
+  section.appendChild(h);
+  const ul = document.createElement('ul');
+  for (const item of items) {
+    const node = ctx?.nodeIndex.get(item.id);
+    const li = document.createElement('li');
+    if (node) {
+      li.className = 'child';
+      li.tabIndex = 0;
+      const codeSpan = document.createElement('span');
+      codeSpan.className = 'code';
+      codeSpan.textContent = node.name;
+      const descSpan = document.createElement('span');
+      descSpan.className = 'desc';
+      descSpan.textContent = item.title;
+      li.appendChild(codeSpan);
+      li.appendChild(descSpan);
+      li.addEventListener('click', () => showDetail(node));
+      li.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          showDetail(node);
+        }
+      });
+    } else {
+      li.textContent = item.title;
+      li.style.color = 'rgba(255,255,255,0.6)';
+    }
     ul.appendChild(li);
   }
   section.appendChild(ul);

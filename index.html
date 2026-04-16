@@ -9,8 +9,12 @@
 <body>
   <div class="container">
     <header>
-      <h1>ICD-10 Classification Network</h1>
+      <h1 id="app-title">ICD-10 Classification Network</h1>
       <div class="controls">
+        <div class="revision-toggle" role="radiogroup" aria-label="Revision">
+          <button type="button" class="rev-btn active" data-revision="icd10" aria-pressed="true">ICD-10</button>
+          <button type="button" class="rev-btn" data-revision="icd11" aria-pressed="false">ICD-11</button>
+        </div>
         <select id="layout-select" aria-label="Select visualization type">
           <option value="tree">Hierarchical Tree</option>
           <option value="radial">Radial Tree</option>

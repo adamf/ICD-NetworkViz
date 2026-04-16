@@ -48,6 +48,44 @@ h1 {
   flex-wrap: wrap;
 }
 
+.revision-toggle {
+  display: inline-flex;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rev-btn {
+  padding: 0.45rem 0.9rem;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.7);
+  border: none;
+  border-radius: 0;
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background 0.15s ease, color 0.15s ease;
+}
+
+.rev-btn:not(:last-child) {
+  border-right: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.rev-btn:hover {
+  background: rgba(255, 255, 255, 0.08);
+  color: white;
+}
+
+.rev-btn.active {
+  background: linear-gradient(135deg, #7c3aed 0%, #2563eb 100%);
+  color: white;
+}
+
+.rev-btn:disabled {
+  cursor: wait;
+  opacity: 0.6;
+}
+
 button {
   padding: 0.5rem 1rem;
   border: none;

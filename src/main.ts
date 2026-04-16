@@ -1,20 +1,46 @@
 /**
- * ICD-10 Network Visualization
- * 
- * Main entry point for the TypeScript/D3.js visualization application.
- * Loads ICD-10 data from CSV files and renders interactive hierarchical visualizations.
+ * ICD-10 / ICD-11 Network Visualization
+ *
+ * Main entry point. Loads ICD-10 from CSVs on startup, lazily loads
+ * the ICD-11 bundle when the user toggles to it, and re-renders the
+ * visualization on layout / chapter / revision changes.
  */
 
 import './styles.css';
-import { loadICD10Data, buildHierarchy, countNodes } from './data';
+import {
+  loadICD10Data,
+  buildHierarchy,
+  countNodes,
+  loadICD11Bundle,
+  buildICD11Hierarchy,
+  buildICD11Details,
+} from './data';
 import { initVisualization, renderVisualization, resetZoom } from './visualization';
 import { initDetailPanel, refreshIndex, closeDetailPanel } from './detailPanel';
-import type { LayoutType, Chapter } from './types';
+import type {
+  LayoutType,
+  Chapter,
+  Revision,
+  HierarchyNode,
+  DetailMap,
+  ICD11Bundle,
+} from './types';
+
+interface ICD10Data {
+  chapters: Chapter[];
+  sections: Awaited<ReturnType<typeof loadICD10Data>>['sections'];
+  diagnoses: Awaited<ReturnType<typeof loadICD10Data>>['diagnoses'];
+  details: DetailMap;
+}
 
 // State
 let currentLayout: LayoutType = 'tree';
+let currentRevision: Revision = 'icd10';
 let currentChapterFilter = 'all';
-let chapters: Chapter[] = [];
+let containerRef: HTMLElement | null = null;
+let icd10: ICD10Data | null = null;
+let icd11: ICD11Bundle | null = null;
+let icd11Details: DetailMap | null = null;
 
 /**
  * Mirror the active layout as a body class so layout-dependent UI
@@ -26,139 +52,208 @@ function applyLayoutClass(layout: LayoutType): void {
   body.classList.add(`layout-${layout}`);
 }
 
-/**
- * Initialize the application
- */
 async function init(): Promise<void> {
   const container = document.getElementById('visualization');
   const loading = document.getElementById('loading');
-  
   if (!container || !loading) {
     console.error('Required DOM elements not found');
     return;
   }
+  containerRef = container;
 
   try {
-    // Load data
     const data = await loadICD10Data();
-    chapters = data.chapters;
-
-    // Hide loading indicator
+    icd10 = data;
     loading.classList.add('hidden');
 
-    // Populate chapter filter dropdown
-    populateChapterFilter(data.chapters);
-
-    // Initialize visualization
+    populateChapterFilter(icd10ChapterOptions(data.chapters));
     initVisualization(container);
 
-    // Build hierarchy and render
     const hierarchy = buildHierarchy(
       data.chapters,
       data.sections,
       data.diagnoses,
-      currentChapterFilter
+      currentChapterFilter,
     );
 
-    // Initialize the detail panel with the lookup table + first hierarchy.
     initDetailPanel(data.details, hierarchy);
-
     applyLayoutClass(currentLayout);
     renderVisualization(hierarchy, currentLayout, container);
-
-    // Update stats
     updateStats(hierarchy, data.chapters.length);
-
-    // Set up event listeners
-    setupEventListeners(container, data);
-
+    setupEventListeners();
   } catch (error) {
     console.error('Failed to load ICD-10 data:', error);
     loading.textContent = 'Failed to load data. Please refresh the page.';
   }
 }
 
-/**
- * Populate the chapter filter dropdown
- */
-function populateChapterFilter(chapterList: Chapter[]): void {
-  const select = document.getElementById('chapter-filter') as HTMLSelectElement;
+function populateChapterFilter(items: { name: string; description: string }[]): void {
+  const select = document.getElementById('chapter-filter') as HTMLSelectElement | null;
   if (!select) return;
-
-  for (const chapter of chapterList) {
+  // Keep the "all" option, replace the rest.
+  select.innerHTML = '<option value="all">All Chapters</option>';
+  for (const item of items) {
     const option = document.createElement('option');
-    option.value = chapter.chapter_name;
-    option.textContent = `Ch ${chapter.chapter_name}: ${chapter.description.slice(0, 40)}...`;
+    option.value = item.name;
+    option.textContent = item.description;
     select.appendChild(option);
   }
+  select.value = 'all';
 }
 
-/**
- * Update the statistics display
- */
-function updateStats(hierarchy: ReturnType<typeof buildHierarchy>, chapterCount: number): void {
+/** ICD-10 chapters (a Chapter[]) mapped to the filter-option shape. */
+function icd10ChapterOptions(chapters: Chapter[]): { name: string; description: string }[] {
+  return chapters.map((c) => ({
+    name: c.chapter_name,
+    description: `Ch ${c.chapter_name}: ${c.description.slice(0, 44)}…`,
+  }));
+}
+
+/** ICD-11 chapters mapped to the filter-option shape. */
+function icd11ChapterOptions(bundle: ICD11Bundle): { name: string; description: string }[] {
+  const root = bundle.entities[bundle.rootId];
+  if (!root) return [];
+  return root.children
+    .map((id) => {
+      const e = bundle.entities[id];
+      if (!e) return null;
+      const chapterCode = e.code ?? '';
+      const label = chapterCode ? `Ch ${chapterCode}: ${e.title}` : e.title;
+      return { name: id, description: label };
+    })
+    .filter((v): v is { name: string; description: string } => v !== null);
+}
+
+function updateStats(hierarchy: HierarchyNode, chapterCount: number): void {
   const nodeCountEl = document.getElementById('node-count');
   const chapterCountEl = document.getElementById('chapter-count');
-
-  if (nodeCountEl) {
-    nodeCountEl.textContent = countNodes(hierarchy).toString();
-  }
-  if (chapterCountEl) {
-    chapterCountEl.textContent = chapterCount.toString();
-  }
+  if (nodeCountEl) nodeCountEl.textContent = countNodes(hierarchy).toString();
+  if (chapterCountEl) chapterCountEl.textContent = chapterCount.toString();
 }
 
-/**
- * Set up event listeners for controls
- */
-function setupEventListeners(
-  container: HTMLElement,
-  data: Awaited<ReturnType<typeof loadICD10Data>>
-): void {
-  // Layout selector
-  const layoutSelect = document.getElementById('layout-select') as HTMLSelectElement;
-  if (layoutSelect) {
-    layoutSelect.addEventListener('change', (e) => {
-      currentLayout = (e.target as HTMLSelectElement).value as LayoutType;
-      const hierarchy = buildHierarchy(
-        data.chapters,
-        data.sections,
-        data.diagnoses,
-        currentChapterFilter
-      );
-      refreshIndex(hierarchy);
-      closeDetailPanel();
-      applyLayoutClass(currentLayout);
-      renderVisualization(hierarchy, currentLayout, container);
-    });
+function currentHierarchy(): HierarchyNode | null {
+  if (currentRevision === 'icd10') {
+    if (!icd10) return null;
+    return buildHierarchy(
+      icd10.chapters,
+      icd10.sections,
+      icd10.diagnoses,
+      currentChapterFilter,
+    );
+  }
+  if (!icd11) return null;
+  return buildICD11Hierarchy(icd11, currentChapterFilter);
+}
+
+function currentChapterCount(): number {
+  if (currentRevision === 'icd10' && icd10) {
+    return currentChapterFilter === 'all' ? icd10.chapters.length : 1;
+  }
+  if (currentRevision === 'icd11' && icd11) {
+    const root = icd11.entities[icd11.rootId];
+    if (!root) return 0;
+    return currentChapterFilter === 'all' ? root.children.length : 1;
+  }
+  return 0;
+}
+
+function rerender(): void {
+  if (!containerRef) return;
+  const hierarchy = currentHierarchy();
+  if (!hierarchy) return;
+  refreshIndex(hierarchy);
+  closeDetailPanel();
+  applyLayoutClass(currentLayout);
+  renderVisualization(hierarchy, currentLayout, containerRef);
+  updateStats(hierarchy, currentChapterCount());
+}
+
+/** Switch the active revision. Lazy-loads ICD-11 on first switch. */
+async function switchRevision(revision: Revision): Promise<void> {
+  if (revision === currentRevision) return;
+  currentRevision = revision;
+  currentChapterFilter = 'all';
+
+  document.querySelectorAll<HTMLButtonElement>('.rev-btn').forEach((btn) => {
+    const active = btn.dataset.revision === revision;
+    btn.classList.toggle('active', active);
+    btn.setAttribute('aria-pressed', String(active));
+  });
+
+  const titleEl = document.getElementById('app-title');
+  if (titleEl) {
+    titleEl.textContent = revision === 'icd11'
+      ? 'ICD-11 Classification Network'
+      : 'ICD-10 Classification Network';
   }
 
-  // Chapter filter
-  const chapterFilter = document.getElementById('chapter-filter') as HTMLSelectElement;
-  if (chapterFilter) {
-    chapterFilter.addEventListener('change', (e) => {
-      currentChapterFilter = (e.target as HTMLSelectElement).value;
-      const hierarchy = buildHierarchy(
-        data.chapters,
-        data.sections,
-        data.diagnoses,
-        currentChapterFilter
-      );
-      refreshIndex(hierarchy);
-      closeDetailPanel();
-      renderVisualization(hierarchy, currentLayout, container);
-      updateStats(hierarchy, currentChapterFilter === 'all' ? chapters.length : 1);
-    });
+  if (revision === 'icd11' && !icd11) {
+    setRevisionButtonsDisabled(true);
+    try {
+      const bundle = await loadICD11Bundle();
+      icd11 = bundle;
+      icd11Details = buildICD11Details(bundle);
+    } finally {
+      setRevisionButtonsDisabled(false);
+    }
   }
 
-  // Reset button
+  // Populate chapter filter + detail panel data for the active revision.
+  if (revision === 'icd11' && icd11 && icd11Details) {
+    populateChapterFilter(icd11ChapterOptions(icd11));
+    const hierarchy = buildICD11Hierarchy(icd11, 'all');
+    initDetailPanel(icd11Details, hierarchy);
+  } else if (icd10) {
+    populateChapterFilter(icd10ChapterOptions(icd10.chapters));
+    const hierarchy = buildHierarchy(
+      icd10.chapters,
+      icd10.sections,
+      icd10.diagnoses,
+      'all',
+    );
+    initDetailPanel(icd10.details, hierarchy);
+  }
+
+  rerender();
+}
+
+function setRevisionButtonsDisabled(disabled: boolean): void {
+  document.querySelectorAll<HTMLButtonElement>('.rev-btn').forEach((btn) => {
+    btn.disabled = disabled;
+  });
+}
+
+function setupEventListeners(): void {
+  const layoutSelect = document.getElementById('layout-select') as HTMLSelectElement | null;
+  layoutSelect?.addEventListener('change', (e) => {
+    currentLayout = (e.target as HTMLSelectElement).value as LayoutType;
+    rerender();
+  });
+
+  const chapterFilter = document.getElementById('chapter-filter') as HTMLSelectElement | null;
+  chapterFilter?.addEventListener('change', (e) => {
+    currentChapterFilter = (e.target as HTMLSelectElement).value;
+    rerender();
+  });
+
   const resetBtn = document.getElementById('reset-btn');
-  if (resetBtn) {
-    resetBtn.addEventListener('click', () => {
-      resetZoom(container, currentLayout);
+  resetBtn?.addEventListener('click', () => {
+    if (!containerRef) return;
+    resetZoom(containerRef, currentLayout);
+  });
+
+  document.querySelectorAll<HTMLButtonElement>('.rev-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const rev = btn.dataset.revision as Revision | undefined;
+      if (!rev) return;
+      void switchRevision(rev);
     });
-  }
+  });
+
+  // Replace the initial chapter-filter with the ICD-10 chapter set
+  // once icd10 is loaded (it was already populated by init(), but we
+  // consolidate formatting here).
+  if (icd10) populateChapterFilter(icd10ChapterOptions(icd10.chapters));
 }
 
-// Start the application
 init();

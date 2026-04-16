@@ -3,7 +3,14 @@
  */
 
 import * as d3 from 'd3';
-import type { Chapter, Section, Diagnosis, HierarchyNode, DetailMap } from './types';
+import type {
+  Chapter,
+  Section,
+  Diagnosis,
+  HierarchyNode,
+  DetailMap,
+  ICD11Bundle,
+} from './types';
 
 /**
  * Curated 2-3 word labels for each ICD-10-CM chapter. Shown beneath the
@@ -190,4 +197,139 @@ export function countNodes(node: HierarchyNode): number {
     }
   }
   return count;
+}
+
+// ---------------------------------------------------------------------------
+// ICD-11
+// ---------------------------------------------------------------------------
+
+/** Lazy-load the ICD-11 bundle (fetched only when the user switches to it). */
+export async function loadICD11Bundle(): Promise<ICD11Bundle> {
+  const bundle = await d3.json<ICD11Bundle>('icd11.json');
+  if (!bundle) throw new Error('Failed to load icd11.json');
+  return bundle;
+}
+
+/**
+ * Default depth cap when building the ICD-11 hierarchy. The full tree
+ * has ~36k nodes across 11 levels — rendering all of them as SVG
+ * bogs the browser down. At depth 3 we render root + chapters +
+ * blocks + their first-level children (~2.5k nodes), which covers
+ * most of the interesting structure. Users can still view deeper
+ * entities via the detail panel (every entity has a detail entry).
+ */
+const ICD11_DEFAULT_MAX_DEPTH = 3;
+
+/**
+ * Build a HierarchyNode tree from an ICD-11 bundle. Uses the MMS
+ * linearization's `children[]` arrays as the primary parent-child
+ * relation. Cross-reference edges (foundationChildElsewhere etc.)
+ * are not part of the tree — they're surfaced in the detail panel
+ * and the force-graph layout instead.
+ *
+ * `chapterFilter` is either 'all' or a specific chapter entity id.
+ * `opts.expandId`, when set, allows the subtree rooted at that
+ * entity to extend beyond the depth cap (used when the user focuses
+ * on a node and wants to see its descendants).
+ */
+export function buildICD11Hierarchy(
+  bundle: ICD11Bundle,
+  chapterFilter: string = 'all',
+  opts: { maxDepth?: number; expandId?: string } = {},
+): HierarchyNode {
+  const rootEntity = bundle.entities[bundle.rootId];
+  if (!rootEntity) {
+    throw new Error(`Root entity ${bundle.rootId} not found in ICD-11 bundle`);
+  }
+
+  const maxDepth = opts.maxDepth ?? ICD11_DEFAULT_MAX_DEPTH;
+  const expandId = opts.expandId;
+
+  const walk = (
+    id: string,
+    level: number,
+    ancestors: Set<string>,
+    inExpanded: boolean,
+  ): HierarchyNode | null => {
+    if (ancestors.has(id)) return null; // polyhierarchy cycle guard
+    const e = bundle.entities[id];
+    if (!e) return null;
+
+    const name = e.code || e.title.slice(0, 18);
+    const node: HierarchyNode = {
+      id,
+      name,
+      description: e.title || id,
+      shortLabel: shortenIcd11(e.title, level),
+      level,
+    };
+
+    const effectiveMax = inExpanded ? Infinity : maxDepth;
+    if (level < effectiveMax) {
+      const nextAncestors = new Set(ancestors);
+      nextAncestors.add(id);
+      const childInExpanded = inExpanded || id === expandId;
+      const children: HierarchyNode[] = [];
+      for (const cid of e.children) {
+        const child = walk(cid, level + 1, nextAncestors, childInExpanded);
+        if (child) children.push(child);
+      }
+      if (children.length) node.children = children;
+    }
+    return node;
+  };
+
+  const root: HierarchyNode = {
+    id: bundle.rootId,
+    name: 'ICD-11',
+    description: rootEntity.title || 'International Classification of Diseases, 11th Revision',
+    shortLabel: 'Mortality & Morbidity Statistics',
+    level: 0,
+    children: [],
+  };
+
+  for (const chapterId of rootEntity.children) {
+    if (chapterFilter !== 'all' && chapterId !== chapterFilter) continue;
+    const subtree = walk(chapterId, 1, new Set([bundle.rootId]), false);
+    if (subtree) root.children!.push(subtree);
+  }
+
+  return root;
+}
+
+function shortenIcd11(title: string, level: number): string | undefined {
+  if (!title) return undefined;
+  // Chapters: keep the full title so the overview is readable.
+  const max = level <= 1 ? 36 : level === 2 ? 32 : 44;
+  return shorten(title, max);
+}
+
+/**
+ * Build a DetailMap from an ICD-11 bundle so the detail panel can
+ * lookup entries the same way it does for ICD-10. Cross-reference
+ * ids are resolved to { id, title } pairs so the panel can render
+ * them as clickable links into the graph.
+ */
+export function buildICD11Details(bundle: ICD11Bundle): DetailMap {
+  const out: DetailMap = {};
+  const titleOf = (id: string): string =>
+    bundle.entities[id]?.title ?? id;
+
+  for (const [id, e] of Object.entries(bundle.entities)) {
+    const refs = (ids: string[]) => ids.map((ref) => ({ id: ref, title: titleOf(ref) }));
+    out[id] = {
+      kind: 'icd11',
+      code: e.code ?? '',
+      desc: e.title,
+      definition: e.definition ?? undefined,
+      classKind: e.classKind ?? undefined,
+      browserUrl: e.browserUrl ?? undefined,
+      foundationChildElsewhere: refs(e.foundationChildElsewhere),
+      exclusionRefs: refs(e.exclusion),
+      inclusionRefs: refs(e.inclusion),
+      relatedPerinatal: refs(e.relatedPerinatal),
+      relatedMaternal: refs(e.relatedMaternal),
+    };
+  }
+  return out;
 }
