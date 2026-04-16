@@ -1092,7 +1092,26 @@ function handleDoubleClick(event: MouseEvent, d: D3Node): void {
       sugiyamaExpandedIds.add(id);
     }
     renderInternal('compact');
-    centerOnOverview();
+
+    // Zoom to the clicked node + its (newly-visible or remaining)
+    // children, rather than fitting the whole layout — the user's
+    // focus is local, so keep the view local.
+    if (currentContainer) {
+      const focus = findNodeById(id);
+      const w = currentContainer.clientWidth;
+      const h = currentContainer.clientHeight;
+      if (focus) {
+        const nodesToFit = [focus, ...(focus.children ?? [])] as D3Node[];
+        const t = fitToNodes(nodesToFit, w, h, {
+          maxScale: 1.5,
+          padX: 150,
+          padY: 80,
+        });
+        svg.transition().duration(500).call(zoom.transform, t);
+      } else {
+        centerOnOverview();
+      }
+    }
     return;
   }
 
