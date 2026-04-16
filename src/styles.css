@@ -328,10 +328,10 @@ body.layout-graph .link:not(.xref) {
  * is switched by a class on <body>. */
 .detail-panel {
   position: fixed;
-  top: 5.5rem;
+  top: 7rem;
   right: 1rem;
   width: min(420px, calc(100vw - 2rem));
-  max-height: calc(100vh - 7rem);
+  max-height: calc(100vh - 8rem);
   background: rgba(12, 18, 36, 0.96);
   backdrop-filter: blur(12px);
   padding: 1.25rem 1.25rem 1.5rem;

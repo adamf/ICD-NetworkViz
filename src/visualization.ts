@@ -198,6 +198,9 @@ function renderInternal(mode: LayoutMode): void {
   currentMode = mode;
 
   g.selectAll('*').remove();
+  // Re-renders move/remove nodes from under the cursor, so mouseout
+  // never fires — actively hide any stuck tooltip.
+  hideTooltip();
 
   if (currentLayout === 'graph') {
     renderGraphMode(width, height);
@@ -1122,6 +1125,17 @@ function handleMouseOut(): void {
   if (tooltip) tooltip.classList.remove('visible');
 }
 
+/**
+ * Hide the hover tooltip. Called whenever the user does something
+ * that might move the hovered node out from under their cursor
+ * (click, double-click, re-render) — otherwise mouseout never fires
+ * and the tooltip sticks around.
+ */
+function hideTooltip(): void {
+  const tooltip = document.getElementById('tooltip');
+  if (tooltip) tooltip.classList.remove('visible');
+}
+
 // Delay opening the detail panel on single-click so a follow-up
 // double-click (focus/zoom) can cancel it. Otherwise the panel pops
 // up between the two clicks and can swallow the second click —
@@ -1140,6 +1154,7 @@ function cancelPendingClick(): void {
 function handleClick(event: MouseEvent, d: D3Node): void {
   event.stopPropagation();
   cancelPendingClick();
+  hideTooltip();
   const data = d.data;
   pendingClick = {
     timer: window.setTimeout(() => {
@@ -1153,6 +1168,7 @@ function handleDoubleClick(event: MouseEvent, d: D3Node): void {
   event.stopPropagation();
   event.preventDefault();
   cancelPendingClick();
+  hideTooltip();
 
   // Always update the detail panel so it reflects whichever node the
   // user is engaging with, even when they double-click a new node
