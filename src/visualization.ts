@@ -1188,10 +1188,24 @@ function updateLabelVisibility(): void {
     // Graph and sugiyama pack many nodes per screen area, so default
     // to labeling only top levels to avoid an unreadable pile of text.
     // Hover tooltips still reveal the rest on demand.
-    const defaultMaxLabelLevel =
+    const baseMax =
       currentLayout === 'graph' || currentLayout === 'sugiyama' ? 1 : 2;
+
+    // If the base level would label too many nodes (e.g. ICD-11's
+    // ~353 blocks at level 2), pull back one more level. 150 labels
+    // at once is roughly the point where tree labels start to
+    // overlap uncomfortably at standard overview scale.
+    let maxLevel = baseMax;
+    if (baseMax > 0) {
+      let count = 0;
+      currentRoot.each((d) => {
+        if (d.data.level <= baseMax) count++;
+      });
+      if (count > 150) maxLevel = baseMax - 1;
+    }
+
     currentRoot.each((d) => {
-      if (d.data.level <= defaultMaxLabelLevel) visible.add(d.data.id);
+      if (d.data.level <= maxLevel) visible.add(d.data.id);
     });
   } else {
     const focus = findNodeById(focusedNodeId);
