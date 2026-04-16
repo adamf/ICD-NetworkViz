@@ -519,11 +519,20 @@ function layoutToScreen(d: D3Node): [number, number] {
  * current zoom scale. Used when the user clicks a related node in
  * the detail panel — we want to show them where it lives without
  * yanking the zoom.
+ *
+ * Also treats the pan target as the new focus for label purposes,
+ * so its label (and its direct children's labels) become visible.
+ * Without this, panning to a grandchild of the previously focused
+ * node would center on a dot with no label.
  */
 export function panToNode(nodeId: string): void {
   if (!currentContainer || !svg) return;
   const node = findNodeById(nodeId);
   if (!node) return;
+
+  focusedNodeId = nodeId;
+  updateLabelVisibility();
+
   const [sx, sy] = layoutToScreen(node);
   const w = currentContainer.clientWidth;
   const h = currentContainer.clientHeight;
