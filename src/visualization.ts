@@ -426,8 +426,11 @@ function renderSugiyamaMode(width: number, height: number): void {
     const n = childNodes.length;
     const halfUp = Math.ceil(n / 2);
     const halfDn = n - halfUp;
-    const spacingX = 170;
-    const rowY = 110;
+    // With rotated (vertical) labels each column only needs room for
+    // the node circle plus a small gap — the label extends upward or
+    // downward rather than eating horizontal space.
+    const spacingX = 44;
+    const rowY = 200;
     if (rootNode) {
       rootNode.x = 0;
       rootNode.y = 0;
@@ -605,17 +608,30 @@ function renderSugiyamaMode(width: number, height: number): void {
     .attr('dy', '0.33em')
     .text('+');
 
-  // Labels to the right of each node.
+  // In the default overview we pack chapters tightly in two rows.
+  // Rotate labels so they fan out away from the central row (up for
+  // nodes above the root, down for nodes below) — that lets columns
+  // sit only ~60px apart without labels colliding.
+  const useRotatedLabels =
+    sugiyamaExpandedIds.size === 0 && source.level === 0;
+
   const labels = nodeGroups
     .append('text')
     .attr('class', 'node-label')
-    .attr('x', 12)
-    .attr('text-anchor', 'start');
+    .attr('text-anchor', 'start')
+    .attr('x', useRotatedLabels ? 0 : 12)
+    .attr('transform', (d) => {
+      if (!useRotatedLabels) return null as unknown as string;
+      // Root: leave horizontal. Above root: rotate -90 so text reads
+      // upward. Below root: rotate +90 so text reads downward.
+      if (d.data.level === 0) return '';
+      return (d.y ?? 0) < 0 ? 'rotate(-90) translate(12, 0)' : 'rotate(90) translate(12, 0)';
+    });
 
   labels
     .append('tspan')
     .attr('class', 'label-primary')
-    .attr('x', 12)
+    .attr('x', useRotatedLabels ? 0 : 12)
     .attr('dy', (d) => (d.data.shortLabel ? '-0.25em' : '0.31em'))
     .text((d) => d.data.name);
 
@@ -623,7 +639,7 @@ function renderSugiyamaMode(width: number, height: number): void {
     .filter((d) => !!d.data.shortLabel)
     .append('tspan')
     .attr('class', 'label-secondary')
-    .attr('x', 12)
+    .attr('x', useRotatedLabels ? 0 : 12)
     .attr('dy', '1.1em')
     .text((d) => d.data.shortLabel ?? '');
 
