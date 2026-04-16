@@ -1122,16 +1122,14 @@ function handleDoubleClick(event: MouseEvent, d: D3Node): void {
     const expanded = expander(d.data.id);
     if (expanded) {
       currentData = expanded;
-      focusOnNode(d.data.id);
-      return;
     }
   }
 
-  // Fallback: zoom only when the node is a direct parent of leaves
-  // in the currently rendered tree (e.g. A17 -> A17.0...A17.9).
-  if (isLeafParent(d)) {
-    focusOnNode(d.data.id);
-  }
+  // Always trigger focus-zoom on double-click so the user gets a
+  // visible response. focusOnNode adapts to whatever's in the node's
+  // subtree — leaf parents end up tightly zoomed, higher-level nodes
+  // see a broader fit.
+  focusOnNode(d.data.id);
 }
 
 function findInHierarchy(root: HierarchyNode, id: string): HierarchyNode | null {
@@ -1142,12 +1140,6 @@ function findInHierarchy(root: HierarchyNode, id: string): HierarchyNode | null 
     if (n.children) stack.push(...n.children);
   }
   return null;
-}
-
-function isLeafParent(d: D3Node): boolean {
-  const kids = d.children ?? [];
-  if (kids.length === 0) return false;
-  return kids.every((c) => !c.children || c.children.length === 0);
 }
 
 /**
