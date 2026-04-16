@@ -141,6 +141,13 @@ main {
   color: #00d4ff;
 }
 
+.info-panel .hint {
+  margin-top: 0.4rem;
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.6);
+  font-style: italic;
+}
+
 .stats {
   display: flex;
   gap: 1rem;

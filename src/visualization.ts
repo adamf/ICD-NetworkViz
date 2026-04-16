@@ -24,14 +24,18 @@ const levelSizes: Record<number, number> = {
   4: 4
 };
 
-interface D3Node extends d3.HierarchyPointNode<HierarchyNode> {
-  x0?: number;
-  y0?: number;
-}
+type D3Node = d3.HierarchyPointNode<HierarchyNode>;
 
 let svg: d3.Selection<SVGSVGElement, unknown, null, undefined>;
 let g: d3.Selection<SVGGElement, unknown, null, undefined>;
 let zoom: d3.ZoomBehavior<SVGSVGElement, unknown>;
+
+// State that persists between renders so focus/reveal operations can
+// find the current layout positions without re-rendering.
+let currentLayout: LayoutType = 'tree';
+let currentRoot: D3Node | null = null;
+let currentContainer: HTMLElement | null = null;
+let focusedNodeId: string | null = null;
 
 /**
  * Initialize the D3 visualization
@@ -53,12 +57,15 @@ export function initVisualization(container: HTMLElement): void {
 
   // Set up zoom behavior
   zoom = d3.zoom<SVGSVGElement, unknown>()
-    .scaleExtent([0.1, 4])
+    .scaleExtent([0.1, 6])
     .on('zoom', (event) => {
       g.attr('transform', event.transform);
     });
 
   svg.call(zoom);
+  // We use dblclick on nodes to focus a subtree, so disable d3's default
+  // "double-click to zoom" gesture that would otherwise fight ours.
+  svg.on('dblclick.zoom', null);
 
   // Handle window resize
   window.addEventListener('resize', () => {
@@ -79,34 +86,37 @@ export function renderVisualization(
   const width = container.clientWidth;
   const height = container.clientHeight;
 
-  // Clear previous content
+  // Clear previous content and reset focus (since the tree just changed).
   g.selectAll('*').remove();
+  focusedNodeId = null;
+  currentLayout = layoutType;
+  currentContainer = container;
 
   // Create hierarchy
   const root = d3.hierarchy(data);
 
-  // Create layout based on type
+  // Apply the selected layout; d3.tree/d3.cluster mutate nodes with x/y.
   let nodes: D3Node[];
   let links: d3.HierarchyPointLink<HierarchyNode>[];
 
   switch (layoutType) {
     case 'radial':
       nodes = createRadialLayout(root, width, height);
-      links = root.links() as d3.HierarchyPointLink<HierarchyNode>[];
       break;
     case 'cluster':
       nodes = createClusterLayout(root, width, height);
-      links = root.links() as d3.HierarchyPointLink<HierarchyNode>[];
       break;
     case 'tree':
     default:
       nodes = createTreeLayout(root, width, height);
-      links = root.links() as d3.HierarchyPointLink<HierarchyNode>[];
       break;
   }
+  // After layout, root is a HierarchyPointNode.
+  currentRoot = nodes[0];
+  links = (currentRoot as D3Node).links() as d3.HierarchyPointLink<HierarchyNode>[];
 
   // Draw links
-  const linkGenerator = layoutType === 'radial' 
+  const linkGenerator = layoutType === 'radial'
     ? createRadialLinkGenerator()
     : d3.linkHorizontal<d3.HierarchyPointLink<HierarchyNode>, d3.HierarchyPointNode<HierarchyNode>>()
         .x(d => d.y)
@@ -123,7 +133,7 @@ export function renderVisualization(
   // Draw nodes
   const nodeGroups = g.append('g')
     .attr('class', 'nodes')
-    .selectAll('g')
+    .selectAll<SVGGElement, D3Node>('g')
     .data(nodes)
     .join('g')
     .attr('class', 'node')
@@ -141,14 +151,15 @@ export function renderVisualization(
     .attr('stroke', d => d3.color(levelColors[d.data.level] || '#607d8b')?.darker(0.5)?.toString() || '#333')
     .on('mouseover', handleMouseOver)
     .on('mouseout', handleMouseOut)
-    .on('click', handleClick);
+    .on('click', handleClick)
+    .on('dblclick', handleDoubleClick);
 
-  // Add labels for top-level nodes. Each label is a <text> element with
-  // two <tspan>s so the primary name sits above a shorter descriptive
-  // subtitle (when one exists), without needing a hover.
+  // Add labels for every node. Visibility is then controlled by
+  // `updateLabelVisibility` based on focus state — by default only
+  // levels 0-2 are shown so the baseline view stays legible.
   const labels = nodeGroups
-    .filter(d => d.data.level <= 2)
     .append('text')
+    .attr('class', 'node-label')
     .attr('x', d => {
       if (layoutType === 'radial') {
         return d.x < Math.PI ? 15 : -15;
@@ -168,19 +179,18 @@ export function renderVisualization(
       return '';
     });
 
-  // Primary label (e.g. "Chapter 1"). Shift up half a line when a
-  // short label is present so the pair stays visually balanced.
+  // Primary label. Shift up half a line when a short label exists so
+  // the pair stays visually balanced around the node center.
   labels
     .append('tspan')
     .attr('class', 'label-primary')
     .attr('x', function () {
-      // Inherit x from parent <text> so both tspans align.
       return (this.parentNode as SVGTextElement).getAttribute('x');
     })
     .attr('dy', d => (d.data.shortLabel ? '-0.25em' : '0.31em'))
     .text(d => d.data.name);
 
-  // Secondary short label (e.g. "Infectious diseases").
+  // Secondary short label.
   labels
     .filter(d => !!d.data.shortLabel)
     .append('tspan')
@@ -190,6 +200,8 @@ export function renderVisualization(
     })
     .attr('dy', '1.1em')
     .text(d => d.data.shortLabel ?? '');
+
+  updateLabelVisibility();
 
   // Center the visualization
   centerVisualization(width, height, layoutType);
@@ -232,7 +244,7 @@ function createRadialLayout(
   height: number
 ): D3Node[] {
   const radius = Math.min(width, height) / 2 - 100;
-  
+
   const treeLayout = d3.tree<HierarchyNode>()
     .size([2 * Math.PI, radius])
     .separation((a, b) => (a.parent === b.parent ? 1 : 2) / a.depth);
@@ -287,7 +299,7 @@ function handleMouseOver(
     <div class="tooltip-title">${d.data.name}</div>
     <div class="tooltip-text">${d.data.description}</div>
   `;
-  
+
   tooltip.style.left = `${event.pageX + 15}px`;
   tooltip.style.top = `${event.pageY - 10}px`;
   tooltip.classList.add('visible');
@@ -315,10 +327,128 @@ function handleClick(
 }
 
 /**
- * Reset the zoom to initial state
+ * Handle double-click event - zoom to the node's subtree and reveal
+ * labels for the node and its direct children.
+ */
+function handleDoubleClick(
+  event: MouseEvent,
+  d: D3Node
+): void {
+  event.stopPropagation();
+  event.preventDefault();
+  focusOnNode(d.data.id);
+}
+
+/**
+ * Zoom to fit a node's subtree and reveal labels for that node and
+ * its direct children (so the user can read where they are and what
+ * codes are reachable from here).
+ */
+function focusOnNode(nodeId: string): void {
+  if (!currentRoot || !currentContainer) return;
+  const focus = findNodeById(nodeId);
+  if (!focus) return;
+
+  focusedNodeId = nodeId;
+  updateLabelVisibility();
+
+  // Collect screen-space positions (pre-zoom) of the focus and every
+  // descendant, so we can fit a bounding box to the viewport.
+  const xs: number[] = [];
+  const ys: number[] = [];
+  focus.each((d) => {
+    const [sx, sy] = layoutToScreen(d as D3Node);
+    xs.push(sx);
+    ys.push(sy);
+  });
+
+  // Pad so labels aren't flush against the viewport edges. The x axis
+  // (horizontal in screen space) gets more padding to accommodate the
+  // long sibling labels that extend leftward.
+  const padX = 180;
+  const padY = 60;
+  const minX = Math.min(...xs) - padX;
+  const maxX = Math.max(...xs) + padX;
+  const minY = Math.min(...ys) - padY;
+  const maxY = Math.max(...ys) + padY;
+
+  const w = currentContainer.clientWidth;
+  const h = currentContainer.clientHeight;
+  const boxW = Math.max(1, maxX - minX);
+  const boxH = Math.max(1, maxY - minY);
+
+  // Cap zoom-in so single leaves don't blow up to absurd sizes.
+  const scale = Math.min(w / boxW, h / boxH, 3.5);
+  const cx = (minX + maxX) / 2;
+  const cy = (minY + maxY) / 2;
+
+  const t = d3.zoomIdentity
+    .translate(w / 2 - cx * scale, h / 2 - cy * scale)
+    .scale(scale);
+
+  svg.transition().duration(750).call(zoom.transform, t);
+}
+
+/**
+ * Show labels for the focused node + its ancestors + its direct
+ * children. When nothing is focused, show labels for levels 0-2.
+ */
+function updateLabelVisibility(): void {
+  if (!currentRoot) return;
+  const visible = new Set<string>();
+
+  if (focusedNodeId === null) {
+    currentRoot.each((d) => {
+      if (d.data.level <= 2) visible.add(d.data.id);
+    });
+  } else {
+    const focus = findNodeById(focusedNodeId);
+    if (focus) {
+      // Ancestors (including the focus itself) so the user keeps context.
+      let n: d3.HierarchyNode<HierarchyNode> | null = focus;
+      while (n) {
+        visible.add(n.data.id);
+        n = n.parent;
+      }
+      // Direct children.
+      for (const c of focus.children ?? []) {
+        visible.add(c.data.id);
+      }
+    }
+  }
+
+  g.selectAll<SVGTextElement, D3Node>('.node-label')
+    .style('display', (d) => (visible.has(d.data.id) ? null : 'none'));
+}
+
+function findNodeById(id: string): D3Node | null {
+  if (!currentRoot) return null;
+  let found: D3Node | null = null;
+  currentRoot.each((d) => {
+    if (d.data.id === id) found = d as D3Node;
+  });
+  return found;
+}
+
+/**
+ * Convert a node's layout coordinates to the pre-zoom screen
+ * coordinates used by the zoom transform. For the horizontal tree
+ * layouts d3 stores cross-axis in `x` and depth in `y`, so we transpose.
+ * For the radial layout `x` is an angle (rad) and `y` is a radius.
+ */
+function layoutToScreen(d: D3Node): [number, number] {
+  if (currentLayout === 'radial') {
+    const angle = d.x - Math.PI / 2;
+    return [d.y * Math.cos(angle), d.y * Math.sin(angle)];
+  }
+  return [d.y, d.x];
+}
+
+/**
+ * Reset the zoom to initial state and clear any focus.
  */
 export function resetZoom(container: HTMLElement, layoutType: LayoutType): void {
-  const width = container.clientWidth;
-  const height = container.clientHeight;
-  centerVisualization(width, height, layoutType);
+  focusedNodeId = null;
+  updateLabelVisibility();
+  centerVisualization(container.clientWidth, container.clientHeight, layoutType);
 }

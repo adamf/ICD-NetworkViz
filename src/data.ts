@@ -132,10 +132,12 @@ export function buildHierarchy(
       // Add root codes as children of section
       for (const [rootCode, diagList] of rootCodes) {
         const rootDiag = diagList.find(d => d.diagnosis_name === rootCode);
+        const rootDesc = rootDiag?.text || rootCode;
         const rootNode: HierarchyNode = {
           id: rootCode,
           name: rootCode,
-          description: rootDiag?.text || rootCode,
+          description: rootDesc,
+          shortLabel: shortenSection(rootDesc),
           level: 3,
           children: []
         };
@@ -147,6 +149,7 @@ export function buildHierarchy(
               id: diag.diagnosis_name,
               name: diag.diagnosis_name,
               description: diag.text,
+              shortLabel: shortenSection(diag.text),
               level: 4
             });
           }
