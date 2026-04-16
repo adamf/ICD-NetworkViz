@@ -213,12 +213,16 @@ export async function loadICD11Bundle(): Promise<ICD11Bundle> {
 /**
  * Default depth cap when building the ICD-11 hierarchy. The full tree
  * has ~36k nodes across 11 levels — rendering all of them as SVG
- * bogs the browser down. At depth 3 we render root + chapters +
- * blocks + their first-level children (~2.5k nodes), which covers
- * most of the interesting structure. Users can still view deeper
- * entities via the detail panel (every entity has a detail entry).
+ * bogs the browser down. At depth 2 we render root + chapters +
+ * blocks (~353 nodes), which gives a clean overview comparable to
+ * ICD-10's root+chapters+sections. Double-clicking drills deeper by
+ * rebuilding the hierarchy with `expandId` set to the clicked node
+ * (see the `opts.expandId` branch below).
  */
-const ICD11_DEFAULT_MAX_DEPTH = 3;
+const ICD11_DEFAULT_MAX_DEPTH = 2;
+
+/** How many levels to unfold below the expand target on focus. */
+const ICD11_EXPAND_EXTRA_DEPTH = 3;
 
 /**
  * Build a HierarchyNode tree from an ICD-11 bundle. Uses the MMS
@@ -235,7 +239,11 @@ const ICD11_DEFAULT_MAX_DEPTH = 3;
 export function buildICD11Hierarchy(
   bundle: ICD11Bundle,
   chapterFilter: string = 'all',
-  opts: { maxDepth?: number; expandId?: string } = {},
+  opts: {
+    maxDepth?: number;
+    expandId?: string;
+    expandExtraDepth?: number;
+  } = {},
 ): HierarchyNode {
   const rootEntity = bundle.entities[bundle.rootId];
   if (!rootEntity) {
@@ -244,12 +252,35 @@ export function buildICD11Hierarchy(
 
   const maxDepth = opts.maxDepth ?? ICD11_DEFAULT_MAX_DEPTH;
   const expandId = opts.expandId;
+  const expandExtraDepth = opts.expandExtraDepth ?? ICD11_EXPAND_EXTRA_DEPTH;
 
+  // Precompute the path from root down to expandId via each entity's
+  // primary parent. We need this so that when the expand target lives
+  // deeper than maxDepth, we can still descend to it along one narrow
+  // path (rather than rendering every branch at every level).
+  const expandPath = new Set<string>();
+  if (expandId && bundle.entities[expandId]) {
+    let cur: string | undefined = expandId;
+    const safety = 50;
+    for (let i = 0; cur && i < safety; i++) {
+      expandPath.add(cur);
+      if (cur === bundle.rootId) break;
+      cur = bundle.entities[cur]?.parents?.[0];
+    }
+  }
+
+  /**
+   * `expansionLeft` is the number of levels we're still allowed to
+   * descend into the expanded subtree. It becomes `expandExtraDepth`
+   * at the expand target, and decrements as we descend from there.
+   * Zero means "can't descend based on expansion" — but the normal
+   * maxDepth and on-path rules may still allow descent.
+   */
   const walk = (
     id: string,
     level: number,
     ancestors: Set<string>,
-    inExpanded: boolean,
+    expansionLeft: number,
   ): HierarchyNode | null => {
     if (ancestors.has(id)) return null; // polyhierarchy cycle guard
     const e = bundle.entities[id];
@@ -264,14 +295,34 @@ export function buildICD11Hierarchy(
       level,
     };
 
-    const effectiveMax = inExpanded ? Infinity : maxDepth;
-    if (level < effectiveMax) {
+    const isExpandTarget = id === expandId;
+    const isOnPath = expandPath.has(id);
+    const withinCap = level < maxDepth;
+    const hasExpansion = expansionLeft > 0;
+
+    // Decide whether to descend, and how.
+    //
+    //  - within maxDepth: include all children (normal tree walk)
+    //  - at expand target (even beyond maxDepth): fan out and start
+    //    the expansion countdown
+    //  - already within an expanded subtree with budget left: fan out
+    //  - on the path to the expand target but past maxDepth: descend
+    //    only the single path child, so we don't spray branches above
+    //    the expand point.
+    const shouldDescend = withinCap || isExpandTarget || hasExpansion || isOnPath;
+    if (shouldDescend) {
+      const pathOnly = isOnPath && !isExpandTarget && !withinCap && !hasExpansion;
       const nextAncestors = new Set(ancestors);
       nextAncestors.add(id);
-      const childInExpanded = inExpanded || id === expandId;
+      const childExpansionLeft = isExpandTarget
+        ? expandExtraDepth
+        : hasExpansion
+          ? expansionLeft - 1
+          : 0;
       const children: HierarchyNode[] = [];
       for (const cid of e.children) {
-        const child = walk(cid, level + 1, nextAncestors, childInExpanded);
+        if (pathOnly && !expandPath.has(cid)) continue;
+        const child = walk(cid, level + 1, nextAncestors, childExpansionLeft);
         if (child) children.push(child);
       }
       if (children.length) node.children = children;
@@ -290,7 +341,7 @@ export function buildICD11Hierarchy(
 
   for (const chapterId of rootEntity.children) {
     if (chapterFilter !== 'all' && chapterId !== chapterFilter) continue;
-    const subtree = walk(chapterId, 1, new Set([bundle.rootId]), false);
+    const subtree = walk(chapterId, 1, new Set([bundle.rootId]), 0);
     if (subtree) root.children!.push(subtree);
   }
 

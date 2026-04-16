@@ -15,7 +15,12 @@ import {
   buildICD11Hierarchy,
   buildICD11Details,
 } from './data';
-import { initVisualization, renderVisualization, resetZoom } from './visualization';
+import {
+  initVisualization,
+  renderVisualization,
+  resetZoom,
+  setHierarchyExpander,
+} from './visualization';
 import { initDetailPanel, refreshIndex, closeDetailPanel } from './detailPanel';
 import type {
   LayoutType,
@@ -199,10 +204,18 @@ async function switchRevision(revision: Revision): Promise<void> {
   }
 
   // Populate chapter filter + detail panel data for the active revision.
+  // Also install the ICD-11 expander so focus-zoom can drill deeper
+  // than the default depth cap; in ICD-10 mode there's no expander.
   if (revision === 'icd11' && icd11 && icd11Details) {
     populateChapterFilter(icd11ChapterOptions(icd11));
     const hierarchy = buildICD11Hierarchy(icd11, 'all');
     initDetailPanel(icd11Details, hierarchy);
+    setHierarchyExpander((nodeId) => {
+      if (!icd11) return null;
+      const entity = icd11.entities[nodeId];
+      if (!entity || !entity.children.length) return null;
+      return buildICD11Hierarchy(icd11, currentChapterFilter, { expandId: nodeId });
+    });
   } else if (icd10) {
     populateChapterFilter(icd10ChapterOptions(icd10.chapters));
     const hierarchy = buildHierarchy(
@@ -212,6 +225,7 @@ async function switchRevision(revision: Revision): Promise<void> {
       'all',
     );
     initDetailPanel(icd10.details, hierarchy);
+    setHierarchyExpander(null);
   }
 
   rerender();

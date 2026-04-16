@@ -51,6 +51,19 @@ let currentMode: LayoutMode = 'compact';
 let focusedNodeId: string | null = null;
 
 /**
+ * Optional callback that rebuilds the hierarchy so the subtree rooted
+ * at `nodeId` is fully available for focus-zoom. Used by ICD-11 to
+ * expand on-demand when the user drills past the default depth cap.
+ * Returning null means "nothing to expand".
+ */
+export type HierarchyExpander = (nodeId: string) => HierarchyNode | null;
+let expander: HierarchyExpander | null = null;
+
+export function setHierarchyExpander(fn: HierarchyExpander | null): void {
+  expander = fn;
+}
+
+/**
  * Initialize the D3 visualization
  */
 export function initVisualization(container: HTMLElement): void {
@@ -399,10 +412,20 @@ function handleDoubleClick(event: MouseEvent, d: D3Node): void {
   // with the panel already open on a different one.
   showDetail(d.data);
 
-  // Additionally re-layout + zoom when the node is a direct parent
-  // of leaves (e.g. A17 -> A17.0...A17.9). For higher-up nodes the
-  // zoom view sprawls and is hard to read, so we skip the focus and
-  // just leave the panel update.
+  // If an expander is set (ICD-11 mode), rebuild the hierarchy with
+  // this node's subtree unfolded before focusing. Returning a new
+  // tree means "this node has deeper content; drill in".
+  if (expander) {
+    const expanded = expander(d.data.id);
+    if (expanded) {
+      currentData = expanded;
+      focusOnNode(d.data.id);
+      return;
+    }
+  }
+
+  // Fallback: zoom only when the node is a direct parent of leaves
+  // in the currently rendered tree (e.g. A17 -> A17.0...A17.9).
   if (isLeafParent(d)) {
     focusOnNode(d.data.id);
   }
@@ -489,6 +512,27 @@ function layoutToScreen(d: D3Node): [number, number] {
     return [d.y * Math.cos(angle), d.y * Math.sin(angle)];
   }
   return [d.y, d.x];
+}
+
+/**
+ * Pan the viewport so `nodeId` sits in the center, preserving the
+ * current zoom scale. Used when the user clicks a related node in
+ * the detail panel — we want to show them where it lives without
+ * yanking the zoom.
+ */
+export function panToNode(nodeId: string): void {
+  if (!currentContainer || !svg) return;
+  const node = findNodeById(nodeId);
+  if (!node) return;
+  const [sx, sy] = layoutToScreen(node);
+  const w = currentContainer.clientWidth;
+  const h = currentContainer.clientHeight;
+  const current = d3.zoomTransform(svg.node() as SVGSVGElement);
+  const scale = current.k;
+  const t = d3.zoomIdentity
+    .translate(w / 2 - sx * scale, h / 2 - sy * scale)
+    .scale(scale);
+  svg.transition().duration(500).call(zoom.transform, t);
 }
 
 /** Clear focus, rebuild in compact mode, return to the overview. */

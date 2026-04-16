@@ -5,6 +5,7 @@
  */
 
 import type { DetailEntry, DetailMap, HierarchyNode } from './types';
+import { panToNode } from './visualization';
 
 interface PanelContext {
   details: DetailMap;
@@ -315,11 +316,15 @@ function referenceSection(
       descSpan.textContent = item.title;
       li.appendChild(codeSpan);
       li.appendChild(descSpan);
-      li.addEventListener('click', () => showDetail(node));
+      const activate = () => {
+        showDetail(node);
+        panToNode(node.id);
+      };
+      li.addEventListener('click', activate);
       li.addEventListener('keydown', (e) => {
         if (e.key === 'Enter' || e.key === ' ') {
           e.preventDefault();
-          showDetail(node);
+          activate();
         }
       });
     } else {
@@ -346,11 +351,17 @@ function childList(children: HierarchyNode[]): HTMLElement {
     descSpan.textContent = child.description;
     li.appendChild(codeSpan);
     li.appendChild(descSpan);
-    li.addEventListener('click', () => showDetail(child));
+    const activate = () => {
+      showDetail(child);
+      // Pan the viz to center on the related node so the user can
+      // see where it lives in the hierarchy.
+      panToNode(child.id);
+    };
+    li.addEventListener('click', activate);
     li.addEventListener('keydown', (e) => {
       if (e.key === 'Enter' || e.key === ' ') {
         e.preventDefault();
-        showDetail(child);
+        activate();
       }
     });
     ul.appendChild(li);
